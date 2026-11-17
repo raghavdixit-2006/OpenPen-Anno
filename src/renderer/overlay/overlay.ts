@@ -1,0 +1,266 @@
+import './overlay.css'
+import {
+  OverlayRenderer,
+  StrokeHistory,
+  createStroke,
+  hitTestStroke,
+  isDistinctPoint,
+  type Point,
+  type StrokeStyle
+} from '../../engine'
+import type { HistoryCommand, OverlayState } from '../../shared/ipc'
+
+function mustGet<T extends HTMLElement>(id: string): T {
+  const element = document.getElementById(id)
+  if (!element) throw new Error(`Missing element #${id}`)
+  return element as T
+}
+
+const stage = mustGet<HTMLDivElement>('stage')
+const renderer = new OverlayRenderer(
+  mustGet<HTMLCanvasElement>('committed'),
+  mustGet<HTMLCanvasElement>('live')
+)
+const history = new StrokeHistory()
+
+let appState: OverlayState = {
+  mode: 'passthrough',
+  tool: 'pen',
+  color: '#ff2d2d',
+  size: 4,
+  canUndo: false,
+  canRedo: false
+}
+
+let activePoints: Point[] | null = null
+let activeStyle: StrokeStyle | null = null
+let activePointerId: number | null = null
+let liveFrame = 0
+let erasing = false
+let erasedIds = new Set<string>()
+
+function eraserRadius(): number {
+  return Math.max(8, appState.size * 2)
+}
+
+/** The eraser is not a stroke: it removes strokes on the committed layer. */
+function styleForTool(): StrokeStyle | null {
+  if (appState.tool === 'eraser') return null
+  return {
+    tool: appState.tool,
+    color: appState.color,
+    width: appState.size,
+    // Smooth highlighter rendering (multiply blend, wider nib) lands in step 4.
+    opacity: appState.tool === 'highlighter' ? 0.4 : 1
+  }
+}
+
+function reportHistory(): void {
+  window.api.overlay.reportHistory({ canUndo: history.canUndo, canRedo: history.canRedo })
+}
+
+function resize(): void {
+  renderer.resize(window.innerWidth, window.innerHeight, window.devicePixelRatio || 1)
+  renderCommitted()
+}
+
+function renderCommitted(): void {
+  renderer.renderStrokes(history.strokes)
+}
+
+function scheduleLiveRender(): void {
+  if (liveFrame !== 0) return
+  liveFrame = requestAnimationFrame(() => {
+    liveFrame = 0
+    if (activePoints && activeStyle) renderer.renderLive(activePoints, activeStyle)
+    else renderer.clearLive()
+  })
+}
+
+function collectPoints(event: PointerEvent): Point[] {
+  const coalesced = event.getCoalescedEvents?.() ?? []
+  const samples = coalesced.length > 0 ? coalesced : [event]
+  return samples.map((sample) => ({
+    x: sample.clientX,
+    y: sample.clientY,
+    pressure: sample.pressure
+  }))
+}
+
+function appendPoints(points: readonly Point[]): void {
+  if (!activePoints) return
+  for (const point of points) {
+    if (isDistinctPoint(activePoints[activePoints.length - 1], point)) {
+      activePoints.push(point)
+    }
+  }
+}
+
+function cancelLiveFrame(): void {
+  if (liveFrame !== 0) {
+    cancelAnimationFrame(liveFrame)
+    liveFrame = 0
+  }
+}
+
+function renderErasePreview(point: Point): void {
+  const radius = eraserRadius()
+  for (const stroke of history.strokes) {
+    if (!erasedIds.has(stroke.id) && hitTestStroke(stroke, point, radius)) {
+      erasedIds.add(stroke.id)
+    }
+  }
+  renderer.renderStrokes(history.strokes.filter((stroke) => !erasedIds.has(stroke.id)))
+  renderer.renderEraserCursor(point, radius)
+}
+
+/** Commits whichever gesture is running: ink stroke or erase drag. */
+function finishGesture(): void {
+  cancelLiveFrame()
+
+  if (erasing) {
+    const ids = Array.from(erasedIds)
+    erasing = false
+    erasedIds = new Set()
+    activePointerId = null
+    if (history.remove(ids)) {
+      renderCommitted()
+      reportHistory()
+    }
+    renderer.clearLive()
+    return
+  }
+
+  if (activePoints && activeStyle) {
+    if (activePoints.length > 0) {
+      history.add(createStroke(activePoints, activeStyle))
+      renderCommitted()
+      reportHistory()
+    }
+    activePoints = null
+    activeStyle = null
+    activePointerId = null
+    renderer.clearLive()
+  }
+}
+
+function cancelGesture(): void {
+  cancelLiveFrame()
+  activePoints = null
+  activeStyle = null
+  activePointerId = null
+  erasing = false
+  erasedIds = new Set()
+  renderer.clearLive()
+}
+
+function undo(): void {
+  cancelGesture()
+  if (history.undo()) {
+    renderCommitted()
+    reportHistory()
+  }
+}
+
+function redo(): void {
+  cancelGesture()
+  if (history.redo()) {
+    renderCommitted()
+    reportHistory()
+  }
+}
+
+function clearAll(): void {
+  cancelGesture()
+  if (history.clear()) {
+    renderCommitted()
+    reportHistory()
+  }
+}
+
+stage.addEventListener('pointerdown', (event) => {
+  if (!event.isPrimary) return
+  if (event.pointerType === 'mouse' && event.button !== 0) return
+
+  event.preventDefault()
+  finishGesture()
+
+  if (appState.tool === 'eraser') {
+    erasing = true
+    erasedIds = new Set()
+    activePointerId = event.pointerId
+    stage.setPointerCapture(event.pointerId)
+    renderErasePreview({ x: event.clientX, y: event.clientY, pressure: event.pressure })
+    return
+  }
+
+  activePoints = collectPoints(event)
+  activeStyle = styleForTool()
+  activePointerId = event.pointerId
+  stage.setPointerCapture(event.pointerId)
+  scheduleLiveRender()
+})
+
+stage.addEventListener('pointermove', (event) => {
+  if (event.pointerId !== activePointerId) {
+    // Hover feedback for the eraser before the user presses the button.
+    if (appState.tool === 'eraser' && !erasing) {
+      renderer.renderEraserCursor(
+        { x: event.clientX, y: event.clientY, pressure: event.pressure },
+        eraserRadius()
+      )
+    }
+    return
+  }
+
+  if (erasing) {
+    event.preventDefault()
+    renderErasePreview({ x: event.clientX, y: event.clientY, pressure: event.pressure })
+    return
+  }
+
+  if (!activePoints) return
+  event.preventDefault()
+  appendPoints(collectPoints(event))
+  scheduleLiveRender()
+})
+
+for (const type of ['pointerup', 'pointercancel'] as const) {
+  stage.addEventListener(type, (event) => {
+    if (event.pointerId !== activePointerId) return
+    finishGesture()
+  })
+}
+
+stage.addEventListener('contextmenu', (event) => event.preventDefault())
+
+function applyState(next: OverlayState): void {
+  const modeChanged = next.mode !== appState.mode
+  const toolChanged = next.tool !== appState.tool
+
+  // Commit a gesture before it could be misattributed to the new tool. Switching
+  // to passthrough can also lose the pointerup, so the stroke must be committed.
+  if (toolChanged || (modeChanged && next.mode === 'passthrough')) finishGesture()
+
+  appState = next
+  document.body.dataset.mode = next.mode
+  document.body.dataset.tool = next.tool
+
+  if (toolChanged || modeChanged) {
+    renderCommitted()
+    renderer.clearLive()
+  }
+}
+
+window.addEventListener('resize', resize)
+
+window.api.overlay.onStateChange(applyState)
+window.api.overlay.onClear(clearAll)
+window.api.overlay.onHistory((command: HistoryCommand) => {
+  if (command === 'undo') undo()
+  else redo()
+})
+window.api.overlay.getState().then(applyState)
+
+resize()
+reportHistory()

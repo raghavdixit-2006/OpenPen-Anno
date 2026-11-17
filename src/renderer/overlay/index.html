@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+    />
+    <title>Inkspace Overlay</title>
+  </head>
+  <body data-mode="passthrough" data-tool="pen">
+    <div id="stage">
+      <canvas id="committed"></canvas>
+      <canvas id="live"></canvas>
+      <div id="frame">
+        <span id="badge">Drawing — Ctrl+Shift+D to pass through</span>
+      </div>
+    </div>
+    <script type="module" src="./overlay.ts"></script>
+  </body>
+</html>
