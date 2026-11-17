@@ -1,11 +1,12 @@
 import { create } from 'zustand'
-import type { OverlayMode, OverlayState, ToolId } from '../../shared/ipc'
+import type { DockPosition, OverlayMode, OverlayState, ToolId } from '../../shared/ipc'
 
 interface ToolbarStore extends OverlayState {
   applyState: (state: OverlayState) => void
   selectTool: (tool: ToolId) => void
   selectColor: (color: string) => void
   changeSize: (size: number) => void
+  moveDock: (dock: DockPosition) => void
   toggleMode: () => void
   undo: () => void
   redo: () => void
@@ -17,6 +18,7 @@ export const useToolbarStore = create<ToolbarStore>((set, get) => ({
   tool: 'pen',
   color: '#ff2d2d',
   size: 4,
+  dock: 'bottom',
   canUndo: false,
   canRedo: false,
 
@@ -36,6 +38,10 @@ export const useToolbarStore = create<ToolbarStore>((set, get) => ({
   changeSize: (size) => {
     set({ size })
     window.api.toolbar.setSize(size)
+  },
+  moveDock: (dock) => {
+    set({ dock })
+    window.api.toolbar.setDock(dock)
   },
   toggleMode: () => {
     const mode: OverlayMode = get().mode === 'draw' ? 'passthrough' : 'draw'

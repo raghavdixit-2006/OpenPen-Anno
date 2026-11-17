@@ -9,12 +9,16 @@ export type ToolId = 'pen' | 'highlighter' | 'eraser'
 
 export type HistoryCommand = 'undo' | 'redo'
 
+/** Edge of the screen the toolbar dock is anchored to. */
+export type DockPosition = 'bottom' | 'top' | 'left' | 'right'
+
 /** Authoritative app state, owned by the main process and mirrored in the UI. */
 export interface OverlayState {
   mode: OverlayMode
   tool: ToolId
   color: string
   size: number
+  dock: DockPosition
   canUndo: boolean
   canRedo: boolean
 }
@@ -31,6 +35,7 @@ export const IPC = {
   setTool: 'inkspace:set-tool',
   setColor: 'inkspace:set-color',
   setSize: 'inkspace:set-size',
+  setDock: 'inkspace:set-dock',
   clear: 'inkspace:clear',
   history: 'inkspace:history',
   historyStatus: 'inkspace:history-status',
@@ -53,6 +58,7 @@ export interface InkspaceApi {
     setTool: (tool: ToolId) => void
     setColor: (color: string) => void
     setSize: (size: number) => void
+    setDock: (dock: DockPosition) => void
     clear: () => void
     undo: () => void
     redo: () => void

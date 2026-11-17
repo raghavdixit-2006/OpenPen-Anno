@@ -8,11 +8,12 @@ import {
   sendToOverlay,
   syncOverlayBounds
 } from './overlayWindow'
-import { createToolbarWindow } from './toolbarWindow'
+import { createToolbarWindow, applyToolbarDock } from './toolbarWindow'
 import { registerShortcuts, setHistoryShortcutsEnabled, type ShortcutHandlers } from './shortcuts'
 import {
   applyHistoryStatus,
   getState,
+  isDockPosition,
   isHistoryStatus,
   isOverlayMode,
   isToolId,
@@ -60,6 +61,10 @@ function registerIpc(): void {
     if (next !== null) patchState({ size: next })
   })
 
+  ipcMain.on(IPC.setDock, (_event, dock: unknown) => {
+    if (isDockPosition(dock)) patchState({ dock })
+  })
+
   ipcMain.on(IPC.clear, () => handlers.clear())
 
   ipcMain.on(IPC.history, (_event, command: unknown) => {
@@ -85,17 +90,25 @@ app.whenReady().then(() => {
   registerShortcuts(handlers)
 
   let appliedMode = getState().mode
+  let appliedDock = getState().dock
   onStateChange((state) => {
     if (state.mode !== appliedMode) {
       appliedMode = state.mode
       applyOverlayMode(state.mode)
+    }
+    if (state.dock !== appliedDock) {
+      appliedDock = state.dock
+      applyToolbarDock(state.dock)
     }
     // Undo/redo must only steal Ctrl+Z / Ctrl+Y while drawing. Registering on
     // every state change is a no-op unless the mode actually flipped.
     setHistoryShortcutsEnabled(state.mode === 'draw', handlers)
   })
 
-  const keepOnDisplay = (): void => syncOverlayBounds()
+  const keepOnDisplay = (): void => {
+    syncOverlayBounds()
+    applyToolbarDock(getState().dock)
+  }
   screen.on('display-metrics-changed', keepOnDisplay)
   screen.on('display-added', keepOnDisplay)
   screen.on('display-removed', keepOnDisplay)

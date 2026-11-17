@@ -1,10 +1,20 @@
-import { BrowserWindow, screen } from 'electron'
+import { BrowserWindow, screen, type Rectangle } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
+import type { DockPosition } from '../shared/ipc'
+import { getState } from './state'
 
-const TOOLBAR_WIDTH = 860
-const TOOLBAR_HEIGHT = 82
-const BOTTOM_MARGIN = 20
+/**
+ * Horizontal docks (bottom/top) are wide and short; side docks (left/right) are
+ * narrow and tall. The window is transparent, so its size only needs to fit the
+ * dock surface plus the drag margin.
+ */
+const DOCK_SIZE = {
+  horizontal: { width: 920, height: 80 },
+  vertical: { width: 88, height: 680 }
+} as const
+
+const EDGE_MARGIN = 20
 
 let toolbar: BrowserWindow | null = null
 
@@ -21,6 +31,40 @@ export function raiseToolbar(): void {
   if (toolbar && !toolbar.isDestroyed()) toolbar.moveTop()
 }
 
+/** Centres the dock on the requested edge of the work area. */
+function dockBounds(dock: DockPosition): Rectangle {
+  const { workArea } = screen.getPrimaryDisplay()
+  const isVertical = dock === 'left' || dock === 'right'
+  const { width, height } = isVertical ? DOCK_SIZE.vertical : DOCK_SIZE.horizontal
+
+  const centredX = workArea.x + Math.round((workArea.width - width) / 2)
+  const centredY = workArea.y + Math.round((workArea.height - height) / 2)
+  const rightX = workArea.x + workArea.width - width - EDGE_MARGIN
+  const bottomY = workArea.y + workArea.height - height - EDGE_MARGIN
+
+  switch (dock) {
+    case 'top':
+      return { x: centredX, y: workArea.y + EDGE_MARGIN, width, height }
+    case 'left':
+      return { x: workArea.x + EDGE_MARGIN, y: centredY, width, height }
+    case 'right':
+      return { x: rightX, y: centredY, width, height }
+    default:
+      return { x: centredX, y: bottomY, width, height }
+  }
+}
+
+/**
+ * Re-bounds the toolbar for the current dock side. Called on dock changes and
+ * whenever the display layout changes; the renderer reflows on the same state
+ * broadcast, so it already knows which orientation it is being resized into.
+ */
+export function applyToolbarDock(dock: DockPosition): void {
+  if (!toolbar || toolbar.isDestroyed()) return
+  toolbar.setBounds(dockBounds(dock))
+  raiseToolbar()
+}
+
 function loadToolbar(window: BrowserWindow): void {
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     window.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/toolbar/index.html`)
@@ -35,15 +79,10 @@ function loadToolbar(window: BrowserWindow): void {
  * the overlay ignores the pointer and the click lands on this window instead.
  */
 export function createToolbarWindow(): BrowserWindow {
-  const workArea = screen.getPrimaryDisplay().workArea
-  const x = workArea.x + Math.round((workArea.width - TOOLBAR_WIDTH) / 2)
-  const y = workArea.y + workArea.height - TOOLBAR_HEIGHT - BOTTOM_MARGIN
+  const bounds = dockBounds(getState().dock)
 
   toolbar = new BrowserWindow({
-    x,
-    y,
-    width: TOOLBAR_WIDTH,
-    height: TOOLBAR_HEIGHT,
+    ...bounds,
     show: false,
     transparent: true,
     backgroundColor: '#00000000',

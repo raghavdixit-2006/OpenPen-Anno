@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import {
   IPC,
+  type DockPosition,
   type HistoryCommand,
   type InkspaceApi,
   type OverlayState,
@@ -29,6 +30,7 @@ const api: InkspaceApi = {
     setTool: (tool: ToolId) => ipcRenderer.send(IPC.setTool, tool),
     setColor: (color) => ipcRenderer.send(IPC.setColor, color),
     setSize: (size) => ipcRenderer.send(IPC.setSize, size),
+    setDock: (dock: DockPosition) => ipcRenderer.send(IPC.setDock, dock),
     clear: () => ipcRenderer.send(IPC.clear),
     undo: () => ipcRenderer.send(IPC.history, 'undo'),
     redo: () => ipcRenderer.send(IPC.history, 'redo')

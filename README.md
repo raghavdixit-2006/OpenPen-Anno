@@ -33,9 +33,17 @@ friends keep their own undo while the overlay is click-through.
 ## Layout
 
 ```
-src/main/       Electron main process: overlay window, hotkeys, IPC
+src/main/       Electron main process: overlay + toolbar windows, hotkeys, IPC
 src/preload/    contextBridge API (contextIsolation, sandboxed)
-src/renderer/   overlay page (transparent canvas); toolbar arrives in step 3
+src/renderer/   overlay page (transparent canvas) and React toolbar
 src/engine/     framework-independent stroke model, renderer, history + tests
 src/shared/     IPC channel names and types shared by all processes
 ```
+
+## Toolbar
+
+A floating control bar docks to any screen edge (bottom by default; the four
+dock buttons switch sides). It holds the pen / highlighter / eraser tools, an
+eight-colour palette, a brush-size slider, undo / redo / clear, and the
+draw/pass-through toggle. Everything is mirrored from the main process over
+IPC, so the toolbar and hotkeys never disagree.

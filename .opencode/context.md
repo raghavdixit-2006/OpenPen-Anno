@@ -26,12 +26,12 @@ Five approved steps, stopping for confirmation after each.
 | ---- | ----- | ------ |
 | 1 | Scaffold, transparent overlay, draw/passthrough, pen, hotkeys | **Done, verified** |
 | 2 | Engine module: vector strokes, two-canvas rendering, undo/redo/erase, tests | **Done, verified** (21 tests) |
-| 3 | React + Tailwind + Zustand toolbar window, shared state over IPC | **Code complete; runtime verification ~90%** |
+| 3 | React + Tailwind + Zustand toolbar window, shared state over IPC | **Done, verified** |
 | 4 | `perfect-freehand` pressure/velocity strokes + highlighter | Not started |
 | 5 | `electron-store` settings, tray icon, hardware-acceleration toggle | Not started |
 
-Step 3 is **not signed off yet**. See §10 for the one unverified fix and the
-debug code that still has to be removed.
+Step 3 is verified end-to-end (see §10 for the evidence). The only cleanup left
+is the dev-only debug code, which is still useful for steps 4–5.
 
 ---
 
@@ -86,7 +86,8 @@ Two separate BrowserWindows:
   `fullscreen: true` (fullscreen kills DWM transparency on Windows).
   `focusable: false` (see §7).
 - **Toolbar** — separate always-on-top window, `transparent`, frameless,
-  864×86 DIP, bottom-centre, draggable via `-webkit-app-region: drag`.
+  docked to a screen edge (920×80 DIP horizontal, 88×680 DIP vertical),
+  draggable via `-webkit-app-region: drag`.
 
 Security on both: `contextIsolation: true`, `nodeIntegration: false`,
 `sandbox: true`, minimal preload surface, `will-navigate` / window-open denied.
@@ -105,6 +106,7 @@ interface OverlayState {
   tool: 'pen' | 'highlighter' | 'eraser'
   color: string      // '#rrggbb'
   size: number       // 1..64, normalised in main
+  dock: 'bottom' | 'top' | 'left' | 'right'
   canUndo: boolean
   canRedo: boolean
 }
@@ -112,8 +114,8 @@ interface OverlayState {
 
 - Both windows call `getState()` on load and subscribe to `stateChanged`.
 - Toolbar actions are **optimistic** locally, then reconciled by the broadcast.
-- Input is validated in main (`isOverlayMode`, `isToolId`, `normalizeColor`,
-  `normalizeSize`). Never trust renderer payloads.
+- Input is validated in main (`isOverlayMode`, `isToolId`, `isDockPosition`,
+  `normalizeColor`, `normalizeSize`). Never trust renderer payloads.
 - The overlay reports `canUndo`/`canRedo` back after every mutation.
 - Undo/redo/clear are commands sent to the overlay; history lives in the
   renderer engine.
@@ -195,10 +197,18 @@ same conditional pattern.
 
 ## 9. UI details (toolbar)
 
-- Window 864×86 DIP, bottom-centre, `BOTTOM_MARGIN` 20, drag region on the
-  entire bar with `no-drag` on every control.
-- Controls: grip dots, pen / highlighter / eraser, 8-colour palette, brush size
-  slider (1–32 UI, main clamps 1–64), undo, redo, clear, draw/passthrough pill.
+- Two window shapes in `toolbarWindow.ts` (`DOCK_SIZE`): horizontal docks are
+  920×80 DIP, side docks are 88×680 DIP. Both are centred on their edge of the
+  work area with a 20 DIP margin, and re-bounded through `applyToolbarDock()`
+  whenever `state.dock` changes or the display layout changes.
+- The dock is a light floating surface (white, large radius, soft shadow,
+  hairline ring) with a drag region on the entire bar and `no-drag` on every
+  control. Bottom/top docks are one row; left/right docks stack the same groups
+  into a single column, so both orientations share one component tree.
+- Controls: grip, pen / highlighter / eraser, 8-colour palette, brush size
+  slider (1–32 UI, main clamps 1–64; rotated 90° in side docks), undo, redo,
+  clear, draw/passthrough pill (icon-only in side docks), and four dock-position
+  buttons drawn as a screen with a bar on the target edge.
 - Icons are inline SVGs in `icons.tsx`; no icon font or extra dependency.
 - Tailwind 4 entry: `styles.css` starts with `@import 'tailwindcss';`.
 - Zustand store mirrors `OverlayState` plus optimistic actions that call
@@ -211,35 +221,40 @@ guessing pixel offsets.
 
 ## 10. Open items / known state
 
-Must do before step 3 is declared done:
+Step 3 verification (2026-11-17, real Windows input via `ui.ps1`, state read
+over CDP):
 
-1. **Verify the `focusable: false` fix.** Added to `overlayWindow.ts` after
-   discovering that the first stroke raises the overlay above the toolbar. The
-   app was stopped before this was re-tested. Expected result: toolbar controls
-   keep working after drawing, in both modes.
-2. **Remove dev-only debug hooks** or get explicit approval to keep them:
+- Toolbar stays clickable **after drawing**, in both a side dock and the bottom
+  dock — the `focusable: false` fix holds. First stroke no longer hides the
+  controls.
+- Undo / redo after a stroke: ink 2811 → 0 → 2780 (snapshot repaint).
+- Eraser removes the whole stroke after a stroke exists; undo restores it
+  exactly (2780).
+- Clear empties the layer and is undoable.
+- Tool, colour and size reach the canvas: red then `#0a84ff` ink, highlighter
+  alpha 0.4, size 6 vs 32 changes ink ~4× for a same-length stroke.
+- Mode pill and Ctrl+Shift+D stay in sync in both directions.
+- Toolbar remains clickable while the overlay is in passthrough.
+- All four docks re-bound and reflow correctly; no renderer overflow
+  (88×680 and 920×80 viewports exactly match their window sizes).
+
+Note: with the eraser selected, the dashed ring drawn on the live canvas stays
+visible while hovering. That is intended hover feedback, not leftover ink — do
+not count it as stroke residue.
+
+Static checks at signoff: `pnpm test` (29 tests), `pnpm typecheck`, `pnpm lint`,
+`pnpm build` all pass. README layout/toolbar sections updated.
+
+Remaining before release (not blocking step 4):
+
+1. Remove the dev-only debug hooks:
    - `src/main/diagnostics.ts` + `logWindowDiagnostics()` calls in `index.ts`
    - `app.commandLine.appendSwitch('remote-debugging-port', '9222')` in
      `src/main/index.ts`
-3. Re-run `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`.
-4. Update `README.md` (the Layout section still says "toolbar arrives in
-   step 3").
-5. Final manual pass: toolbar clickable in passthrough, tool/colour/size affect
-   ink, eraser removes strokes, undo/redo enable/disable correctly, mode button
-   and Ctrl+Shift+D stay in sync, toolbar drag works.
-
-Verified so far in step 3:
-
-- Toolbar renders (React + Tailwind) and is visible/clickable through the
-  overlay in passthrough.
-- Tool, colour, and mode changes propagate; drawing produces ink; the mode pill
-  follows Ctrl+Shift+D.
-- Toolbar drag moves the window (423,893 → 423,749 → restored).
-- Engine: 29 Vitest assertions pass (stroke + history, incl. eraser hit-test).
-
-Still unproven end-to-end: eraser / undo / redo / clear *after* a stroke (the
-clicks were being swallowed by the overlay above the toolbar — the bug fixed by
-`focusable: false`).
+   They are `is.dev`-gated, so they never reach a production build, and CDP is
+   still the fastest way to verify steps 4–5. Pending an explicit decision to
+   keep them until step 5, they stay.
+2. Step 3 work is uncommitted in the working tree (`feat:` commit still owed).
 
 ---
 
@@ -254,6 +269,10 @@ clicks were being swallowed by the overlay above the toolbar — the bug fixed b
   (step 3), `perfect-freehand` (step 4), `electron-store` (step 5).
 - Scaffold lives at the repo root (was briefly in a temporary subdirectory).
 - Single-instance lock prevents a second overlay fighting for hotkeys.
+- Dock side is authoritative state, not a window property: the renderer needs it
+  to reflow, the main process needs it to re-bound the window.
+- One toolbar component serves both orientations (a `vertical` flag drives
+  flex direction) instead of separate horizontal/vertical layouts.
 
 ---
 

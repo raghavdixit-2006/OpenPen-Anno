@@ -1,6 +1,7 @@
 import { BrowserWindow } from 'electron'
 import {
   IPC,
+  type DockPosition,
   type HistoryStatus,
   type OverlayMode,
   type OverlayState,
@@ -12,6 +13,7 @@ const state: OverlayState = {
   tool: 'pen',
   color: '#ff2d2d',
   size: 4,
+  dock: 'bottom',
   canUndo: false,
   canRedo: false
 }
@@ -53,6 +55,10 @@ export function isOverlayMode(value: unknown): value is OverlayMode {
 
 export function isToolId(value: unknown): value is ToolId {
   return value === 'pen' || value === 'highlighter' || value === 'eraser'
+}
+
+export function isDockPosition(value: unknown): value is DockPosition {
+  return value === 'bottom' || value === 'top' || value === 'left' || value === 'right'
 }
 
 export function normalizeColor(value: unknown): string | null {

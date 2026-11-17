@@ -30,6 +30,7 @@ let appState: OverlayState = {
   tool: 'pen',
   color: '#ff2d2d',
   size: 4,
+  dock: 'bottom',
   canUndo: false,
   canRedo: false
 }

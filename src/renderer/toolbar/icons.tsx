@@ -98,3 +98,45 @@ export function PointerIcon(props: IconProps): ReactElement {
     </Svg>
   )
 }
+
+/**
+ * A tiny screen with the dock bar highlighted on one edge. Reading the glyph
+ * tells you where the toolbar will land, which a tooltip alone cannot.
+ */
+export function DockIcon({
+  position,
+  className
+}: IconProps & { position: 'bottom' | 'top' | 'left' | 'right' }): ReactElement {
+  const bar =
+    position === 'top'
+      ? { x: 6, y: 6, width: 12, height: 3 }
+      : position === 'bottom'
+        ? { x: 6, y: 15, width: 12, height: 3 }
+        : position === 'left'
+          ? { x: 6, y: 6, width: 3, height: 12 }
+          : { x: 15, y: 6, width: 3, height: 12 }
+
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.6}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="3.25" y="3.25" width="17.5" height="17.5" rx="3.2" />
+      <rect
+        x={bar.x}
+        y={bar.y}
+        width={bar.width}
+        height={bar.height}
+        rx="1.3"
+        fill="currentColor"
+        stroke="none"
+      />
+    </svg>
+  )
+}

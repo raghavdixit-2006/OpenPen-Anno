@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react'
 import { useToolbarStore } from './store'
 import {
+  DockIcon,
   EraserIcon,
   HighlighterIcon,
   PenIcon,
@@ -10,7 +11,7 @@ import {
   UndoIcon,
   type IconComponent
 } from './icons'
-import type { ToolId } from '../../shared/ipc'
+import type { DockPosition, ToolId } from '../../shared/ipc'
 
 const PALETTE = [
   '#ff2d2d',
@@ -29,12 +30,75 @@ const TOOLS: Array<{ id: ToolId; label: string; Icon: IconComponent }> = [
   { id: 'eraser', label: 'Eraser', Icon: EraserIcon }
 ]
 
-function GripDots(): ReactElement {
+const DOCK_OPTIONS: Array<{ id: DockPosition; label: string }> = [
+  { id: 'bottom', label: 'Dock at the bottom' },
+  { id: 'top', label: 'Dock at the top' },
+  { id: 'left', label: 'Dock on the left' },
+  { id: 'right', label: 'Dock on the right' }
+]
+
+const ICON_BUTTON =
+  'grid shrink-0 place-items-center rounded-lg text-zinc-500 transition enabled:hover:bg-zinc-100 enabled:hover:text-zinc-900 disabled:cursor-default disabled:opacity-30'
+
+function Grip({ vertical }: { vertical: boolean }): ReactElement {
   return (
-    <div className="grid grid-cols-2 gap-[3px] px-1 opacity-30" aria-hidden="true">
-      {Array.from({ length: 6 }, (_, index) => (
-        <span key={index} className="h-[3px] w-[3px] rounded-full bg-white" />
-      ))}
+    <div className="flex shrink-0 items-center justify-center" aria-hidden="true">
+      <span className={`rounded-full bg-zinc-200 ${vertical ? 'h-6 w-1' : 'h-1 w-6'}`} />
+    </div>
+  )
+}
+
+function Divider({ vertical }: { vertical: boolean }): ReactElement {
+  return (
+    <div
+      className={`shrink-0 bg-zinc-200 ${vertical ? 'h-px w-6' : 'h-6 w-px'}`}
+      aria-hidden="true"
+    />
+  )
+}
+
+function SizeControl({ vertical }: { vertical: boolean }): ReactElement {
+  const size = useToolbarStore((state) => state.size)
+  const changeSize = useToolbarStore((state) => state.changeSize)
+
+  if (vertical) {
+    return (
+      <div className="no-drag flex shrink-0 flex-col items-center gap-1">
+        <div className="relative h-24 w-4 shrink-0">
+          <input
+            type="range"
+            min={1}
+            max={32}
+            step={1}
+            value={size}
+            aria-label="Brush size"
+            onChange={(event) => changeSize(Number(event.target.value))}
+            className="ink-range ink-range-vertical"
+          />
+        </div>
+        <span className="text-[11px] font-medium tabular-nums text-zinc-500">{size}</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="no-drag flex shrink-0 items-center gap-2">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-400">
+        Size
+      </span>
+      <input
+        type="range"
+        min={1}
+        max={32}
+        step={1}
+        value={size}
+        aria-label="Brush size"
+        onChange={(event) => changeSize(Number(event.target.value))}
+        className="ink-range w-[80px]"
+      />
+      <span className="w-4 text-right text-[11px] font-medium tabular-nums text-zinc-500">
+        {size}
+      </span>
     </div>
   )
 }
@@ -43,29 +107,40 @@ export default function App(): ReactElement {
   const mode = useToolbarStore((state) => state.mode)
   const tool = useToolbarStore((state) => state.tool)
   const color = useToolbarStore((state) => state.color)
-  const size = useToolbarStore((state) => state.size)
+  const dock = useToolbarStore((state) => state.dock)
   const canUndo = useToolbarStore((state) => state.canUndo)
   const canRedo = useToolbarStore((state) => state.canRedo)
 
   const selectTool = useToolbarStore((state) => state.selectTool)
   const selectColor = useToolbarStore((state) => state.selectColor)
-  const changeSize = useToolbarStore((state) => state.changeSize)
+  const moveDock = useToolbarStore((state) => state.moveDock)
   const toggleMode = useToolbarStore((state) => state.toggleMode)
   const undo = useToolbarStore((state) => state.undo)
   const redo = useToolbarStore((state) => state.redo)
   const clear = useToolbarStore((state) => state.clear)
 
+  // Side docks stack everything into a single narrow column; top and bottom
+  // docks keep the original single-row strip.
+  const vertical = dock === 'left' || dock === 'right'
   const drawing = mode === 'draw'
-
-  const historyButton =
-    'no-drag grid h-8 w-8 place-items-center rounded-lg text-white/60 transition enabled:hover:bg-white/10 enabled:hover:text-white disabled:cursor-default disabled:opacity-25'
 
   return (
     <div className="drag-region h-full w-full p-2">
-      <div className="flex h-full items-center gap-2 rounded-2xl border border-white/10 bg-[#14161b]/95 px-2.5 text-white shadow-[0_10px_30px_rgba(0,0,0,0.45)]">
-        <GripDots />
+      <div
+        className={`flex h-full w-full items-center bg-white/95 text-zinc-700 ring-1 ring-black/5 ${
+          vertical
+            ? 'flex-col justify-center gap-1.5 rounded-[22px] px-2 py-3'
+            : 'flex-row gap-2 rounded-[20px] px-3'
+        }`}
+        style={{ boxShadow: '0 12px 30px rgba(15, 23, 42, 0.2), 0 2px 6px rgba(15, 23, 42, 0.08)' }}
+      >
+        <Grip vertical={vertical} />
 
-        <div className="no-drag flex items-center gap-0.5 rounded-xl bg-black/35 p-1">
+        <div
+          className={`no-drag flex shrink-0 gap-1 rounded-xl bg-zinc-100 p-1 ${
+            vertical ? 'flex-col' : 'flex-row'
+          }`}
+        >
           {TOOLS.map(({ id, label, Icon }) => (
             <button
               key={id}
@@ -76,16 +151,20 @@ export default function App(): ReactElement {
               onClick={() => selectTool(id)}
               className={`grid h-8 w-9 place-items-center rounded-lg transition ${
                 tool === id
-                  ? 'bg-white text-zinc-900 shadow-sm'
-                  : 'text-white/60 hover:bg-white/10 hover:text-white'
+                  ? 'bg-white text-zinc-900 shadow-[0_1px_2px_rgba(15,23,42,0.16)]'
+                  : 'text-zinc-500 hover:text-zinc-800'
               }`}
             >
-              <Icon className="h-[17px] w-[17px]" />
+              <Icon className="h-[18px] w-[18px]" />
             </button>
           ))}
         </div>
 
-        <div className="no-drag flex items-center gap-1.5 px-1">
+        <div
+          className={`no-drag shrink-0 ${
+            vertical ? 'grid grid-cols-2 gap-2 py-1' : 'flex items-center gap-1.5'
+          }`}
+        >
           {PALETTE.map((swatch) => {
             const selected = swatch === color
             return (
@@ -97,80 +176,113 @@ export default function App(): ReactElement {
                 aria-pressed={selected}
                 onClick={() => selectColor(swatch)}
                 style={{ backgroundColor: swatch }}
-                className={`h-5 w-5 rounded-full border transition ${
+                className={`h-[18px] w-[18px] rounded-full border border-black/10 transition ${
                   selected
-                    ? 'scale-110 border-white ring-2 ring-white/60'
-                    : 'border-white/20 hover:scale-110'
+                    ? 'ring-2 ring-zinc-900 ring-offset-2 ring-offset-white'
+                    : 'hover:scale-110'
                 }`}
               />
             )
           })}
         </div>
 
-        <div className="no-drag flex w-[136px] items-center gap-2 px-1">
-          <span className="text-[9px] font-semibold uppercase tracking-wider text-white/35">
-            Size
-          </span>
-          <input
-            type="range"
-            min={1}
-            max={32}
-            step={1}
-            value={size}
-            aria-label="Brush size"
-            onChange={(event) => changeSize(Number(event.target.value))}
-            className="ink-range w-full"
-          />
-          <span className="w-5 text-right text-[11px] tabular-nums text-white/60">{size}</span>
+        <SizeControl vertical={vertical} />
+
+        <Divider vertical={vertical} />
+
+        <div
+          className={`no-drag flex shrink-0 items-center gap-0.5 ${
+            vertical ? 'flex-col' : 'flex-row'
+          }`}
+        >
+          <button
+            type="button"
+            className={`${ICON_BUTTON} h-8 w-8`}
+            title="Undo (Ctrl+Z)"
+            aria-label="Undo"
+            disabled={!canUndo}
+            onClick={undo}
+          >
+            <UndoIcon className="h-[17px] w-[17px]" />
+          </button>
+          <button
+            type="button"
+            className={`${ICON_BUTTON} h-8 w-8`}
+            title="Redo (Ctrl+Y)"
+            aria-label="Redo"
+            disabled={!canRedo}
+            onClick={redo}
+          >
+            <RedoIcon className="h-[17px] w-[17px]" />
+          </button>
+          <button
+            type="button"
+            className={`${ICON_BUTTON} h-8 w-8 enabled:hover:text-red-500`}
+            title="Clear all (Ctrl+Shift+C)"
+            aria-label="Clear all"
+            disabled={!canUndo}
+            onClick={clear}
+          >
+            <TrashIcon className="h-[17px] w-[17px]" />
+          </button>
         </div>
-
-        <div className="h-7 w-px bg-white/10" aria-hidden="true" />
-
-        <button
-          type="button"
-          className={historyButton}
-          title="Undo (Ctrl+Z)"
-          aria-label="Undo"
-          disabled={!canUndo}
-          onClick={undo}
-        >
-          <UndoIcon className="h-[17px] w-[17px]" />
-        </button>
-        <button
-          type="button"
-          className={historyButton}
-          title="Redo (Ctrl+Y)"
-          aria-label="Redo"
-          disabled={!canRedo}
-          onClick={redo}
-        >
-          <RedoIcon className="h-[17px] w-[17px]" />
-        </button>
-        <button
-          type="button"
-          className={`${historyButton} hover:text-red-300`}
-          title="Clear all (Ctrl+Shift+C)"
-          aria-label="Clear all"
-          disabled={!canUndo}
-          onClick={clear}
-        >
-          <TrashIcon className="h-[17px] w-[17px]" />
-        </button>
 
         <button
           type="button"
           onClick={toggleMode}
-          title="Toggle drawing / passthrough (Ctrl+Shift+D)"
-          aria-pressed={drawing}
-          className={`ml-auto flex h-9 shrink-0 items-center gap-2 rounded-xl px-3 text-xs font-semibold transition ${
+          title={
             drawing
-              ? 'bg-red-500 text-white shadow-[0_0_18px_rgba(239,68,68,0.45)] hover:bg-red-400'
-              : 'bg-white/10 text-white/70 hover:bg-white/15 hover:text-white'
+              ? 'Drawing — click for pass-through (Ctrl+Shift+D)'
+              : 'Pass-through — click to draw (Ctrl+Shift+D)'
+          }
+          aria-label={drawing ? 'Drawing, switch to pass-through' : 'Pass-through, start drawing'}
+          aria-pressed={drawing}
+          className={`no-drag shrink-0 font-semibold transition ${
+            vertical
+              ? 'grid h-10 w-10 place-items-center rounded-xl'
+              : 'ml-auto flex h-9 items-center gap-2 rounded-xl px-3 text-xs'
+          } ${
+            drawing
+              ? 'bg-red-500 text-white shadow-[0_6px_16px_rgba(239,68,68,0.35)] hover:bg-red-600'
+              : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700'
           }`}
         >
-          {drawing ? <PenIcon className="h-4 w-4" /> : <PointerIcon className="h-4 w-4" />}
-          <span>{drawing ? 'Drawing' : 'Pass-through'}</span>
+          {drawing ? (
+            <PenIcon className="h-[17px] w-[17px]" />
+          ) : (
+            <PointerIcon className="h-[17px] w-[17px]" />
+          )}
+          {!vertical && <span>{drawing ? 'Drawing' : 'Pass-through'}</span>}
         </button>
+
+        <div
+          className={`no-drag flex shrink-0 gap-0.5 ${
+            vertical ? 'w-full flex-wrap justify-center' : 'items-center'
+          }`}
+          role="group"
+          aria-label="Dock position"
+        >
+          {DOCK_OPTIONS.map(({ id, label }) => {
+            const selected = dock === id
+            return (
+              <button
+                key={id}
+                type="button"
+                title={label}
+                aria-label={label}
+                aria-pressed={selected}
+                onClick={() => moveDock(id)}
+                className={`grid h-6 w-6 place-items-center rounded-md transition ${
+                  selected
+                    ? 'bg-zinc-100 text-zinc-900'
+                    : 'text-zinc-300 hover:bg-zinc-50 hover:text-zinc-500'
+                }`}
+              >
+                <DockIcon position={id} className="h-[15px] w-[15px]" />
+              </button>
+            )
+          })}
+        </div>
       </div>
     </div>
   )
