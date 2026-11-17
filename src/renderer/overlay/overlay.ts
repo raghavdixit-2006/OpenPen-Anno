@@ -3,8 +3,10 @@ import {
   OverlayRenderer,
   StrokeHistory,
   createStroke,
+  getStrokeBounds,
   hitTestStroke,
   isDistinctPoint,
+  type Bounds,
   type Point,
   type StrokeStyle
 } from '../../engine'
@@ -36,6 +38,12 @@ let activePoints: Point[] | null = null
 let activeStyle: StrokeStyle | null = null
 let activePointerId: number | null = null
 let liveFrame = 0
+let hoverFrame = 0
+let hoverPoint: Point | null = null
+let eraseFrame = 0
+let eraseRegion: Bounds | null = null
+let erasePoint: Point | null = null
+let eraseCursorRadius = 8
 let erasing = false
 let erasedIds = new Set<string>()
 
@@ -77,6 +85,21 @@ function scheduleLiveRender(): void {
   })
 }
 
+/**
+ * Mouse move can fire far above the display refresh rate. Coalesce the eraser
+ * hover ring to one repaint per frame.
+ */
+function scheduleEraserHover(point: Point): void {
+  hoverPoint = point
+  if (hoverFrame !== 0) return
+  hoverFrame = requestAnimationFrame(() => {
+    hoverFrame = 0
+    if (hoverPoint && appState.tool === 'eraser' && !erasing) {
+      renderer.renderEraserCursor(hoverPoint, eraserRadius())
+    }
+  })
+}
+
 function collectPoints(event: PointerEvent): Point[] {
   const coalesced = event.getCoalescedEvents?.() ?? []
   const samples = coalesced.length > 0 ? coalesced : [event]
@@ -103,20 +126,60 @@ function cancelLiveFrame(): void {
   }
 }
 
+function cancelEraseFrame(): void {
+  if (eraseFrame !== 0) {
+    cancelAnimationFrame(eraseFrame)
+    eraseFrame = 0
+  }
+  eraseRegion = null
+  erasePoint = null
+}
+
+function unionBounds(a: Bounds | null, b: Bounds | null): Bounds | null {
+  if (!a) return b
+  if (!b) return a
+  return {
+    minX: Math.min(a.minX, b.minX),
+    minY: Math.min(a.minY, b.minY),
+    maxX: Math.max(a.maxX, b.maxX),
+    maxY: Math.max(a.maxY, b.maxY)
+  }
+}
+
+/**
+ * Hit-testing runs on every pointer event so a fast drag never skips a stroke,
+ * but the repaint is coalesced to one per frame. Repainting the committed layer
+ * once per raw event starves the Windows compositor.
+ */
 function renderErasePreview(point: Point): void {
   const radius = eraserRadius()
+
   for (const stroke of history.strokes) {
     if (!erasedIds.has(stroke.id) && hitTestStroke(stroke, point, radius)) {
       erasedIds.add(stroke.id)
+      eraseRegion = unionBounds(eraseRegion, getStrokeBounds(stroke))
     }
   }
-  renderer.renderStrokes(history.strokes.filter((stroke) => !erasedIds.has(stroke.id)))
-  renderer.renderEraserCursor(point, radius)
+
+  erasePoint = point
+  eraseCursorRadius = radius
+
+  if (eraseFrame !== 0) return
+  eraseFrame = requestAnimationFrame(() => {
+    eraseFrame = 0
+    if (eraseRegion) {
+      const visible = history.strokes.filter((stroke) => !erasedIds.has(stroke.id))
+      renderer.repaintCommittedRegion(visible, eraseRegion)
+      eraseRegion = null
+    }
+    if (erasePoint) renderer.renderEraserCursor(erasePoint, eraseCursorRadius)
+  })
 }
 
 /** Commits whichever gesture is running: ink stroke or erase drag. */
 function finishGesture(): void {
   cancelLiveFrame()
+  cancelEraseFrame()
 
   if (erasing) {
     const ids = Array.from(erasedIds)
@@ -133,19 +196,23 @@ function finishGesture(): void {
 
   if (activePoints && activeStyle) {
     if (activePoints.length > 0) {
-      history.add(createStroke(activePoints, activeStyle))
-      renderCommitted()
+      const stroke = createStroke(activePoints, activeStyle)
+      history.add(stroke)
+      // The committed layer already holds every earlier stroke; painting just
+      // the new one avoids a full clear + full history replay per stroke.
+      renderer.paintStroke(stroke)
       reportHistory()
     }
     activePoints = null
     activeStyle = null
     activePointerId = null
-    renderer.clearLive()
+    renderer.endLiveStroke()
   }
 }
 
 function cancelGesture(): void {
   cancelLiveFrame()
+  cancelEraseFrame()
   activePoints = null
   activeStyle = null
   activePointerId = null
@@ -198,6 +265,7 @@ stage.addEventListener('pointerdown', (event) => {
   activeStyle = styleForTool()
   activePointerId = event.pointerId
   stage.setPointerCapture(event.pointerId)
+  renderer.beginLiveStroke()
   scheduleLiveRender()
 })
 
@@ -205,10 +273,7 @@ stage.addEventListener('pointermove', (event) => {
   if (event.pointerId !== activePointerId) {
     // Hover feedback for the eraser before the user presses the button.
     if (appState.tool === 'eraser' && !erasing) {
-      renderer.renderEraserCursor(
-        { x: event.clientX, y: event.clientY, pressure: event.pressure },
-        eraserRadius()
-      )
+      scheduleEraserHover({ x: event.clientX, y: event.clientY, pressure: event.pressure })
     }
     return
   }

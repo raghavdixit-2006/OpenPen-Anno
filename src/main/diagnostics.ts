@@ -9,9 +9,16 @@ export function logWindowDiagnostics(window: BrowserWindow, label: string): void
 
   contents.on('console-message', (_event, ...args: unknown[]) => {
     // Electron >= 36 passes a details object; older versions pass positional args.
-    const first = args[0] as { level?: string; message?: string; lineNumber?: number; sourceId?: string }
+    const first = args[0] as {
+      level?: string
+      message?: string
+      lineNumber?: number
+      sourceId?: string
+    }
     if (first && typeof first === 'object' && 'message' in first) {
-      console.log(`[${label}] ${first.level ?? 'log'}: ${first.message} (${first.sourceId}:${first.lineNumber})`)
+      console.log(
+        `[${label}] ${first.level ?? 'log'}: ${first.message} (${first.sourceId}:${first.lineNumber})`
+      )
       return
     }
     const [level, message, line, source] = args as [number, string, number, string]
