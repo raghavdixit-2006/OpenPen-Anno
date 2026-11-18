@@ -7,6 +7,7 @@ interface ToolbarStore extends OverlayState {
   selectColor: (color: string) => void
   changeSize: (size: number) => void
   moveDock: (dock: DockPosition) => void
+  toggleCollapsed: (collapsed: boolean) => void
   toggleMode: () => void
   undo: () => void
   redo: () => void
@@ -19,6 +20,7 @@ export const useToolbarStore = create<ToolbarStore>((set, get) => ({
   color: '#ff2d2d',
   size: 4,
   dock: 'bottom',
+  collapsed: false,
   canUndo: false,
   canRedo: false,
 
@@ -39,10 +41,11 @@ export const useToolbarStore = create<ToolbarStore>((set, get) => ({
     set({ size })
     window.api.toolbar.setSize(size)
   },
-  moveDock: (dock) => {
-    set({ dock })
-    window.api.toolbar.setDock(dock)
-  },
+  // Dock and collapse change the window's bounds, so they wait for the main
+  // process broadcast: the new layout must mount only after the window has
+  // already been resized, otherwise the transition starts clipped.
+  moveDock: (dock) => window.api.toolbar.setDock(dock),
+  toggleCollapsed: (collapsed) => window.api.toolbar.setCollapsed(collapsed),
   toggleMode: () => {
     const mode: OverlayMode = get().mode === 'draw' ? 'passthrough' : 'draw'
     set({ mode })

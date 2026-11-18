@@ -9,7 +9,7 @@ export type PenTool = 'pen' | 'highlighter'
 export interface StrokeStyle {
   readonly tool: PenTool
   readonly color: string
-  /** CSS pixels. */
+  /** CSS pixels. The highlighter derives its wider nib from this at render time. */
   readonly width: number
   /** 0..1, applied as globalAlpha. */
   readonly opacity: number

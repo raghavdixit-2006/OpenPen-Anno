@@ -47,3 +47,7 @@ dock buttons switch sides). It holds the pen / highlighter / eraser tools, an
 eight-colour palette, a brush-size slider, undo / redo / clear, and the
 draw/pass-through toggle. Everything is mirrored from the main process over
 IPC, so the toolbar and hotkeys never disagree.
+
+Collapse it with the chevron next to the grip: the bar becomes a small 96×56
+pill on the same edge (colour dot, active tool, expand chevron). The pill is
+still draggable and expands back from its chevron.

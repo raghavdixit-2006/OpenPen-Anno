@@ -2,6 +2,7 @@ import './overlay.css'
 import {
   OverlayRenderer,
   StrokeHistory,
+  VelocityPressure,
   createStroke,
   getStrokeBounds,
   hitTestStroke,
@@ -31,6 +32,7 @@ let appState: OverlayState = {
   color: '#ff2d2d',
   size: 4,
   dock: 'bottom',
+  collapsed: false,
   canUndo: false,
   canRedo: false
 }
@@ -52,6 +54,9 @@ function eraserRadius(): number {
   return Math.max(8, appState.size * 2)
 }
 
+/** Mouse input has no pressure channel, so speed stands in for it. */
+const velocityPressure = new VelocityPressure()
+
 /** The eraser is not a stroke: it removes strokes on the committed layer. */
 function styleForTool(): StrokeStyle | null {
   if (appState.tool === 'eraser') return null
@@ -59,7 +64,6 @@ function styleForTool(): StrokeStyle | null {
     tool: appState.tool,
     color: appState.color,
     width: appState.size,
-    // Smooth highlighter rendering (multiply blend, wider nib) lands in step 4.
     opacity: appState.tool === 'highlighter' ? 0.4 : 1
   }
 }
@@ -101,14 +105,20 @@ function scheduleEraserHover(point: Point): void {
   })
 }
 
-function collectPoints(event: PointerEvent): Point[] {
+function collectPoints(event: PointerEvent, pointerType: string): Point[] {
   const coalesced = event.getCoalescedEvents?.() ?? []
   const samples = coalesced.length > 0 ? coalesced : [event]
-  return samples.map((sample) => ({
-    x: sample.clientX,
-    y: sample.clientY,
-    pressure: sample.pressure
-  }))
+  return samples.map((sample) => {
+    const x = sample.clientX
+    const y = sample.clientY
+    return {
+      x,
+      y,
+      // A stylus reports real pressure; everything else derives it from speed.
+      pressure:
+        pointerType === 'pen' ? sample.pressure : velocityPressure.sample(x, y, sample.timeStamp)
+    }
+  })
 }
 
 function appendPoints(points: readonly Point[]): void {
@@ -262,7 +272,8 @@ stage.addEventListener('pointerdown', (event) => {
     return
   }
 
-  activePoints = collectPoints(event)
+  velocityPressure.reset()
+  activePoints = collectPoints(event, event.pointerType)
   activeStyle = styleForTool()
   activePointerId = event.pointerId
   stage.setPointerCapture(event.pointerId)
@@ -287,7 +298,7 @@ stage.addEventListener('pointermove', (event) => {
 
   if (!activePoints) return
   event.preventDefault()
-  appendPoints(collectPoints(event))
+  appendPoints(collectPoints(event, event.pointerType))
   scheduleLiveRender()
 })
 

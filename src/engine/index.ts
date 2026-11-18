@@ -1,4 +1,6 @@
 export * from './types'
 export * from './stroke'
+export * from './outline'
+export * from './pressure'
 export * from './history'
 export * from './renderer'

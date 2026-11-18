@@ -31,6 +31,7 @@ const api: InkspaceApi = {
     setColor: (color) => ipcRenderer.send(IPC.setColor, color),
     setSize: (size) => ipcRenderer.send(IPC.setSize, size),
     setDock: (dock: DockPosition) => ipcRenderer.send(IPC.setDock, dock),
+    setCollapsed: (collapsed: boolean) => ipcRenderer.send(IPC.setCollapsed, collapsed),
     clear: () => ipcRenderer.send(IPC.clear),
     undo: () => ipcRenderer.send(IPC.history, 'undo'),
     redo: () => ipcRenderer.send(IPC.history, 'redo')

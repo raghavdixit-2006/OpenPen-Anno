@@ -19,6 +19,8 @@ export interface OverlayState {
   color: string
   size: number
   dock: DockPosition
+  /** Compact pill instead of the full control bar. */
+  collapsed: boolean
   canUndo: boolean
   canRedo: boolean
 }
@@ -36,6 +38,7 @@ export const IPC = {
   setColor: 'inkspace:set-color',
   setSize: 'inkspace:set-size',
   setDock: 'inkspace:set-dock',
+  setCollapsed: 'inkspace:set-collapsed',
   clear: 'inkspace:clear',
   history: 'inkspace:history',
   historyStatus: 'inkspace:history-status',
@@ -59,6 +62,7 @@ export interface InkspaceApi {
     setColor: (color: string) => void
     setSize: (size: number) => void
     setDock: (dock: DockPosition) => void
+    setCollapsed: (collapsed: boolean) => void
     clear: () => void
     undo: () => void
     redo: () => void

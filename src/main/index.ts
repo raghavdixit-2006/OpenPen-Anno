@@ -65,6 +65,10 @@ function registerIpc(): void {
     if (isDockPosition(dock)) patchState({ dock })
   })
 
+  ipcMain.on(IPC.setCollapsed, (_event, collapsed: unknown) => {
+    if (typeof collapsed === 'boolean') patchState({ collapsed })
+  })
+
   ipcMain.on(IPC.clear, () => handlers.clear())
 
   ipcMain.on(IPC.history, (_event, command: unknown) => {
@@ -91,14 +95,16 @@ app.whenReady().then(() => {
 
   let appliedMode = getState().mode
   let appliedDock = getState().dock
+  let appliedCollapsed = getState().collapsed
   onStateChange((state) => {
     if (state.mode !== appliedMode) {
       appliedMode = state.mode
       applyOverlayMode(state.mode)
     }
-    if (state.dock !== appliedDock) {
+    if (state.dock !== appliedDock || state.collapsed !== appliedCollapsed) {
       appliedDock = state.dock
-      applyToolbarDock(state.dock)
+      appliedCollapsed = state.collapsed
+      applyToolbarDock(state.dock, state.collapsed)
     }
     // Undo/redo must only steal Ctrl+Z / Ctrl+Y while drawing. Registering on
     // every state change is a no-op unless the mode actually flipped.
@@ -107,7 +113,7 @@ app.whenReady().then(() => {
 
   const keepOnDisplay = (): void => {
     syncOverlayBounds()
-    applyToolbarDock(getState().dock)
+    applyToolbarDock(getState().dock, getState().collapsed)
   }
   screen.on('display-metrics-changed', keepOnDisplay)
   screen.on('display-added', keepOnDisplay)

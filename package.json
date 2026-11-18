@@ -23,6 +23,8 @@
   },
   "dependencies": {
     "@electron-toolkit/utils": "^4.0.0",
+    "motion": "^14.14.0",
+    "perfect-freehand": "^1.2.3",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "zustand": "^5.1.0"

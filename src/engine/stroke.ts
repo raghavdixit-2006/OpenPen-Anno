@@ -1,3 +1,4 @@
+import { brushWidth } from './outline'
 import type { Bounds, Point, Stroke, StrokeStyle } from './types'
 
 export const PEN_STYLE: StrokeStyle = {
@@ -42,7 +43,7 @@ export function getStrokeBounds(stroke: Stroke): Bounds | null {
     if (point.y > maxY) maxY = point.y
   }
 
-  const pad = stroke.style.width / 2
+  const pad = brushWidth(stroke.style) / 2
   return { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad }
 }
 
@@ -89,7 +90,7 @@ export function hitTestStroke(stroke: Stroke, point: Point, radius: number): boo
     return false
   }
 
-  const tolerance = Math.max(0, radius) + stroke.style.width / 2
+  const tolerance = Math.max(0, radius) + brushWidth(stroke.style) / 2
   const toleranceSquared = tolerance * tolerance
   const points = stroke.points
 

@@ -14,6 +14,7 @@ const state: OverlayState = {
   color: '#ff2d2d',
   size: 4,
   dock: 'bottom',
+  collapsed: false,
   canUndo: false,
   canRedo: false
 }
@@ -36,13 +37,17 @@ export function patchState(patch: Partial<OverlayState>): void {
 
   Object.assign(state, patch)
 
+  // Layout listeners run before the broadcast: they resize the toolbar window
+  // (or re-apply the overlay mode). The renderers must never receive a layout
+  // change while the window still has its previous bounds, or the first
+  // animation frames run at the wrong size and the transition looks broken.
+  listeners.forEach((listener) => listener(getState()))
+
   for (const window of BrowserWindow.getAllWindows()) {
     if (!window.isDestroyed()) {
       window.webContents.send(IPC.stateChanged, getState())
     }
   }
-
-  listeners.forEach((listener) => listener(getState()))
 }
 
 export function applyHistoryStatus(status: HistoryStatus): void {

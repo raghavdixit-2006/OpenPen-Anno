@@ -1,45 +1,31 @@
+import { strokeOutline } from './outline'
 import { getStrokeBounds } from './stroke'
 import type { Bounds, Point, Stroke, StrokeStyle } from './types'
 
-function tracePoints(ctx: CanvasRenderingContext2D, points: readonly Point[]): void {
-  if (points.length === 0) return
-
-  ctx.beginPath()
-  ctx.moveTo(points[0].x, points[0].y)
-
-  if (points.length === 1) {
-    // A tap still needs a segment so the round line cap paints a dot.
-    ctx.lineTo(points[0].x + 0.01, points[0].y)
-    return
-  }
-
-  // Quadratic through the midpoints keeps the freehand line from looking
-  // like a chain of segments without any smoothing library.
-  for (let i = 1; i < points.length - 1; i++) {
-    const midX = (points[i].x + points[i + 1].x) / 2
-    const midY = (points[i].y + points[i + 1].y) / 2
-    ctx.quadraticCurveTo(points[i].x, points[i].y, midX, midY)
-  }
-
-  const last = points[points.length - 1]
-  ctx.lineTo(last.x, last.y)
-}
-
-export function paintPoints(
+/**
+ * Fills a prepared outline polygon. perfect-freehand has already smoothed the
+ * path and turned pressure into width, so one fill replaces the old stroked
+ * polyline and gives real pen-style tapering.
+ */
+function paintOutlined(
   ctx: CanvasRenderingContext2D,
-  points: readonly Point[],
+  outline: readonly (readonly number[])[],
   style: StrokeStyle
 ): void {
-  if (points.length === 0) return
+  if (outline.length === 0) return
 
   ctx.save()
   ctx.globalAlpha = style.opacity
-  ctx.strokeStyle = style.color
-  ctx.lineWidth = style.width
-  ctx.lineCap = 'round'
-  ctx.lineJoin = 'round'
-  tracePoints(ctx, points)
-  ctx.stroke()
+  // Highlighter ink darkens whatever is already on the layer, like a marker.
+  if (style.tool === 'highlighter') ctx.globalCompositeOperation = 'multiply'
+  ctx.fillStyle = style.color
+  ctx.beginPath()
+  ctx.moveTo(outline[0][0], outline[0][1])
+  for (let i = 1; i < outline.length; i++) {
+    ctx.lineTo(outline[i][0], outline[i][1])
+  }
+  ctx.closePath()
+  ctx.fill()
   ctx.restore()
 }
 
@@ -130,6 +116,12 @@ export class OverlayRenderer {
   private liveExtent: Bounds | null = null
   /** Bounds of the eraser ring currently painted on the live layer. */
   private cursorBounds: Bounds | null = null
+  /**
+   * Outlines are immutable per stroke and snapshot history keeps the same
+   * stroke objects, so a WeakMap lets undo/redo and partial repaints reuse
+   * them without leaking entries.
+   */
+  private readonly outlineCache = new WeakMap<Stroke, number[][]>()
 
   constructor(
     private readonly committedCanvas: HTMLCanvasElement,
@@ -168,13 +160,13 @@ export class OverlayRenderer {
   renderStrokes(strokes: readonly Stroke[]): void {
     clearCanvas(this.committedCtx, this.committedCanvas)
     for (const stroke of strokes) {
-      paintPoints(this.committedCtx, stroke.points, stroke.style)
+      paintOutlined(this.committedCtx, this.outlineFor(stroke), stroke.style)
     }
   }
 
   /** Adds one finished stroke without touching the rest of the layer. */
   paintStroke(stroke: Stroke): void {
-    paintPoints(this.committedCtx, stroke.points, stroke.style)
+    paintOutlined(this.committedCtx, this.outlineFor(stroke), stroke.style)
   }
 
   /**
@@ -186,7 +178,7 @@ export class OverlayRenderer {
       for (const stroke of strokes) {
         const bounds = getStrokeBounds(stroke)
         if (bounds && intersects(bounds, region)) {
-          paintPoints(this.committedCtx, stroke.points, stroke.style)
+          paintOutlined(this.committedCtx, this.outlineFor(stroke), stroke.style)
         }
       }
     })
@@ -220,8 +212,12 @@ export class OverlayRenderer {
     this.lastTipDirty = tip ? padBounds(tip, padding) : null
     this.liveExtent = unionBounds(this.liveExtent, dirty)
 
+    // The outline is rebuilt from every point each frame. perfect-freehand is
+    // linear in point count (~0.8 ms at 6000 samples), and rebuilding is what
+    // keeps the smoothed tail consistent as new samples arrive.
+    const outline = strokeOutline(points, style, false)
     this.repaintRegion(this.liveCtx, dirty, () => {
-      paintPoints(this.liveCtx, points, style)
+      paintOutlined(this.liveCtx, outline, style)
     })
   }
 
@@ -277,6 +273,15 @@ export class OverlayRenderer {
     this.paintedCount = 0
     this.lastTipDirty = null
     this.liveExtent = null
+  }
+
+  /** Cached outline for a committed (immutable) stroke. */
+  private outlineFor(stroke: Stroke): number[][] {
+    const cached = this.outlineCache.get(stroke)
+    if (cached) return cached
+    const outline = strokeOutline(stroke.points, stroke.style)
+    this.outlineCache.set(stroke, outline)
+    return outline
   }
 
   /** Snaps CSS-pixel bounds to one integer device-pixel rectangle. */
