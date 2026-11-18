@@ -110,7 +110,7 @@ interface OverlayState {
   color: string      // '#rrggbb'
   size: number       // 1..64, normalised in main
   dock: 'bottom' | 'top' | 'left' | 'right'
-  collapsed: boolean // glassy circle vs full control bar
+  collapsed: boolean // tucked glass tab vs full control bar
   canUndo: boolean
   canRedo: boolean
 }
@@ -207,23 +207,24 @@ same conditional pattern.
   (margin 0) and centred on the long axis, and re-bounded through
   `applyToolbarDock()` whenever `state.dock` / `state.collapsed` changes or the
   display layout changes. The collapsed window (`COLLAPSED_SIZE`) is a uniform
-  64×64 DIP box for all four docks — a circle needs no mirroring.
-- Collapsing swaps the bar for a single **glassy circular handle** at the
-  screen edge: a 56px circle (white/70, hairline `ring-white/60`, backdrop
-  blur, soft shadow) centred in the 64px window, 4px inset from the edge.
-  There is no other collapsed chrome — the reference image's black bar is an
-  illustration of the screen edge, not UI. The circle is the native drag
-  handle; a 36px chevron island at its centre (`.app-no-drag`) takes pointer
-  events and expands on click, its chevron pointing away from the dock.
-  Hovering the island previews — the circle lifts on a `useMotionValue` scale
-  via `animate()` (no re-render) and the chevron leans toward the expand
-  direction (`chevronNudge` via variant propagation) — with no window-bounds
-  or state churn. The expanded bar gets a matching collapse chevron right
-  after the grip. Both chevrons rotate with the dock side *and* spin in on
-  mount (`chevronSpin`), and `collapsed` travels in `OverlayState` so the main
-  process resizes the window on the same broadcast the renderer reflows on.
-  The expanded bar is dark glass (`zinc-950/85`), hairline `ring-white/10`,
-  inset top highlight; text/icons are zinc-300/400.
+  64×64 DIP box for all four docks — the popped tab fits with shadow room.
+- Collapsing swaps the bar for a **rounded-square glass tab** (48px,
+  `rounded-[10px]`, white/70, hairline `ring-white/60`, backdrop blur, soft
+  shadow) that lives mostly behind the screen edge. Tucked, it sits
+  `TAB_TUCK` (36px) out of view with only a `TAB_SLIVER` (12px) visible as
+  the hover target; hovering spring-pops it flush with the edge
+  (`tabTuckVariants`), revealing its chevron (pointing away from the dock),
+  and a click anywhere on the tab expands. The whole tab is the click target,
+  so it is deliberately not a native drag region — drag regions never receive
+  hover; drag the expanded bar's grip to re-dock instead. The pop is
+  renderer-side transform only: no window-bounds or state churn. Reduced
+  motion keeps the tab fully visible and still. The expanded bar gets a
+  matching collapse chevron right after the grip. Both chevrons rotate with
+  the dock side *and* spin in on mount (`chevronSpin`), and `collapsed`
+  travels in `OverlayState` so the main process resizes the window on the
+  same broadcast the renderer reflows on. The expanded bar is dark glass
+  (`zinc-950/85`), hairline `ring-white/10`, inset top highlight;
+  text/icons are zinc-300/400.
 - Collapse/expand is driven by **Motion for React** (`motion/react`, the only
   animation library). All variant/spring definitions live in
   `renderer/toolbar/animation.ts`, separate from the engine. AnimatePresence
@@ -232,11 +233,12 @@ same conditional pattern.
   spot it occupies in the collapsed window — the same screen spot in the
   expanded window (both shapes are flush to the edge and centred), computed by
   `dockMorph()` in `renderer/toolbar/geometry.ts`, which mirrors
-  `toolbarWindow.ts` sizes and folds the bar into the **circle's footprint**
-  (origin on the docked edge, ±4px inset slide: the circle sits 4px from the
-  edge, the bar surface 8px inside its window). The bar's exit springs into
-  that footprint (scale + translate, per `surfaceVariants`), the circle fades
-  in over it (`tabVariants`). Collapse is optimistic: the UI folds first and
+  `toolbarWindow.ts` sizes and folds the bar into the **tucked tab's sliver
+  footprint** (48×12, flush to the edge; origin on the docked edge, ±8px
+  inset slide: the sliver is flush while the bar surface sits 8px inside its
+  window). The bar's exit springs into that footprint (scale + translate, per
+  `surfaceVariants`), the tab fades in over it, tucked (`tabVariants` +
+  `tabTuckVariants`). Collapse is optimistic: the UI folds first and
   `setCollapsed(true)` is only sent from AnimatePresence's `onExitComplete`,
   so the window stays large while folding and shrinks after. Expansion follows
   main: `toggleCollapsed(false)` first (window grows before the broadcast),
@@ -250,13 +252,11 @@ same conditional pattern.
   a stronger hover. Raw CSS `transition` is replaced with `transition-colors`
   on motion-animated buttons so Motion's transforms don't double-ease.
 - The toolbar window is dragged **natively by the OS**: `.app-drag`
-  (`-webkit-app-region: drag` + grab cursor) is applied only to designated
-  handle regions — the bar's grip (enlarged 44×32/32×44 hit area) and the
-  collapsed glassy circle. The circle's 36px chevron island carries
-  `.app-no-drag` (`-webkit-app-region: no-drag`) because drag regions swallow
-  renderer pointer events — that is also why the circle's hover lift is
-  driven by a motion value from the island's pointer/focus handlers instead
-  of a hover variant on the circle itself. Chromium moves the window itself:
+  (`-webkit-app-region: drag` + grab cursor) is applied only to the expanded
+  bar's grip (enlarged 44×32/32×44 hit area). The collapsed tab is not a
+  drag region because drag regions swallow renderer pointer events and the
+  tab must see hover to pop out; re-dock by expanding first. Chromium moves
+  the window itself:
   zero IPC, zero bounds writes and zero React re-renders during the gesture;
   buttons and sliders live outside drag regions so they stay clickable with
   hover/press feedback. A previous JS-pointer-drag implementation (`use-drag-toolbar.ts`,

@@ -17,10 +17,11 @@ const DOCK_SIZE = {
 } as const
 
 /**
- * Collapsed toolbar: a single glassy circular handle at the screen edge — a
- * 56px circle centred in a uniform 64×64 DIP window (4px inset from the edge).
- * One size serves all four docks, and the window stays centred on the same
- * edge line as the expanded bar, so the crossfade hand-off never jumps.
+ * Collapsed toolbar: a 48px rounded-square glass tab that tucks behind the
+ * screen edge (12px sliver visible, pops out on hover). The uniform 64×64 DIP
+ * window holds the popped tab plus shadow room; one size serves all four
+ * docks, and the window stays centred on the same edge line as the expanded
+ * bar, so the crossfade hand-off never jumps.
  */
 const COLLAPSED_SIZE = { width: 64, height: 64 } as const
 

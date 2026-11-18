@@ -1,20 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
-import {
-  AnimatePresence,
-  MotionConfig,
-  animate,
-  motion,
-  useMotionValue,
-  useReducedMotion
-} from 'motion/react'
+import { AnimatePresence, MotionConfig, motion, useReducedMotion } from 'motion/react'
 import { useToolbarStore } from './store'
 import { dockMorph } from './geometry'
 import {
   CONTROL_VARIANTS,
   TAP_SPRING,
-  chevronNudge,
   chevronSpin,
   surfaceVariants,
+  tabTuckVariants,
   tabVariants,
   tapProps
 } from './animation'
@@ -215,23 +208,7 @@ export default function App(): ReactElement {
           : 'right-0 top-1/2'
   const tabZ = uiCollapsed ? 'z-20' : 'z-0'
 
-  /**
-   * Hover preview on the collapsed handle, driven from its chevron island:
-   * the glassy circle lifts on a motion value (zero re-renders, zero bounds
-   * churn). The island is the only part that gets pointer events — the drag
-   * region around it swallows them — so it also forwards focus for keyboard
-   * users.
-   */
-  const handleScale = useMotionValue(1)
-  const previewHandle = (enter: boolean): void => {
-    if (reduce) return
-    animate(handleScale, enter ? 1.07 : 1, { type: 'spring', stiffness: 380, damping: 22 })
-  }
-  // If the handle unmounts while hovered (expand click), the value would stay
-  // lifted for the next collapse — reset it whenever the circle mounts.
-  useEffect(() => {
-    if (uiCollapsed) handleScale.set(1)
-  }, [uiCollapsed, handleScale])
+  const tuckV = useMemo(() => tabTuckVariants(dock, reduce), [dock, reduce])
 
   return (
     <MotionConfig reducedMotion="user">
@@ -451,39 +428,32 @@ export default function App(): ReactElement {
               initial="hidden"
               animate="visible"
               exit="hidden"
-              whileHover="peek"
-              className={`absolute ${tabZ} ${tabAnchor} h-16 w-16`}
+              className={`absolute ${tabZ} ${tabAnchor} h-12 w-12`}
             >
-              {/* The glassy circle is the native drag handle (~10px annulus
-                  around the island); the chevron island at its centre opts out
-                  of the drag region so it can take pointer events and expand
-                  on click. Hovering lifts the circle via a motion value. */}
-              <motion.div
-                style={{ scale: handleScale }}
-                className="app-drag absolute inset-1 grid h-14 w-14 place-items-center rounded-full bg-white/70 ring-1 ring-white/60 shadow-[0_6px_18px_rgba(0,0,0,0.28)] backdrop-blur-md"
+              {/* The rounded-square glass tab lives mostly behind the screen
+                  edge (only its 12px sliver is visible) and pops out flush on
+                  hover. The whole tab is the click target, so it is not a
+                  native drag region — drag regions never receive hover. */}
+              <motion.button
+                type="button"
+                variants={tuckV}
+                initial="tucked"
+                animate="tucked"
+                exit="tucked"
+                whileHover="popped"
+                onClick={requestExpand}
+                title={drawing ? 'Drawing — expand toolbar' : 'Pass-through — expand toolbar'}
+                aria-label="Expand toolbar"
+                aria-expanded={false}
+                className="grid h-12 w-12 cursor-pointer place-items-center rounded-[10px] bg-white/70 ring-1 ring-white/60 shadow-[0_6px_18px_rgba(0,0,0,0.28)] backdrop-blur-md"
               >
-                <motion.button
-                  type="button"
-                  variants={chevronNudge(expandDirection)}
-                  whileHover="peek"
-                  onPointerEnter={() => previewHandle(true)}
-                  onPointerLeave={() => previewHandle(false)}
-                  onFocus={() => previewHandle(true)}
-                  onBlur={() => previewHandle(false)}
-                  onClick={requestExpand}
-                  title={drawing ? 'Drawing — expand toolbar' : 'Pass-through — expand toolbar'}
-                  aria-label="Expand toolbar"
-                  aria-expanded={false}
-                  className="app-no-drag grid h-9 w-9 cursor-pointer place-items-center rounded-full hover:bg-zinc-900/5 active:bg-zinc-900/10"
+                <motion.span
+                  {...chevronSpin('out', reduce)}
+                  className="grid h-full w-full place-items-center text-zinc-900"
                 >
-                  <motion.span
-                    {...chevronSpin('out', reduce)}
-                    className="grid h-full w-full place-items-center text-zinc-900"
-                  >
-                    <ChevronIcon direction={expandDirection} className="h-4 w-4" />
-                  </motion.span>
-                </motion.button>
-              </motion.div>
+                  <ChevronIcon direction={expandDirection} className="h-4 w-4" />
+                </motion.span>
+              </motion.button>
             </motion.div>
           )}
         </AnimatePresence>

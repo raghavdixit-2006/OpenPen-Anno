@@ -1,13 +1,13 @@
 import type { Variants } from 'motion/react'
-import type { DockMorph } from './geometry'
-import type { ChevronDirection } from './icons'
+import { TAB_TUCK, type DockMorph } from './geometry'
+import type { DockPosition } from '../../shared/ipc'
 
 /**
  * All toolbar animation definitions live here, separate from the annotation
  * engine (`src/engine`) which stays free of React and animation concerns.
  *
  * Variant names match the two toolbar states: `expanded` (control bar) and
- * `collapsed` (edge tab). AnimatePresence runs the exit while both
+ * `collapsed` (tucked glass tab). AnimatePresence runs the exit while both
  * surfaces coexist, so the folds crossfade in place.
  */
 
@@ -43,10 +43,9 @@ export const CONTROL_VARIANTS: Variants = {
 }
 
 /**
- * The control bar folds into the pill's exact footprint (`geometry.ts`).
- * Expansion is a spring; the collapse is a tween so the window resize that
- * follows `onExitComplete` happens at a predictable time. Both surfaces are
- * near-identical whites, so their crossfade needs no dip choreography.
+ * The control bar folds into the tucked tab's sliver footprint
+ * (`geometry.ts`). Expansion is a spring; the collapse is a tween so the
+ * window resize that follows `onExitComplete` happens at a predictable time.
  */
 export function surfaceVariants(morph: DockMorph, reduceMotion: boolean): Variants {
   return {
@@ -86,10 +85,12 @@ export function surfaceVariants(morph: DockMorph, reduceMotion: boolean): Varian
 }
 
 /**
- * The collapsed edge tab fades in under the folding bar and out beneath the
- * growing one. `centre` carries the long-axis centring as Motion x/y values
- * ('-50%'), because Motion writes its own transform and would clobber CSS
- * translate classes; the anchor classes only pin the docked edge.
+ * The collapsed glass tab fades in, tucked behind the screen edge, under the
+ * folding bar and out beneath the growing one. `centre` carries the long-axis
+ * centring as Motion x/y values ('-50%'), because Motion writes its own
+ * transform and would clobber CSS translate classes; the anchor classes only
+ * pin the docked edge. The tab's own tuck/pop states live in
+ * `tabTuckVariants` so this wrapper never animates its position.
  */
 export interface TabCentre {
   x?: string
@@ -113,31 +114,31 @@ export function tabVariants(centre: TabCentre, reduceMotion: boolean): Variants 
       x,
       y,
       transition: reduceMotion ? INSTANT : { duration: 0.15, ease: 'easeIn' }
-    },
-    // `whileHover="peek"` on the tab wrapper: the wrapper itself stays put and
-    // only forwards the label down, so the handle can preview without any
-    // window-bounds or React state churn.
-    peek: {}
+    }
   }
 }
 
-/** The handle's chevron leans toward the direction the panel will open. */
-export function chevronNudge(direction: ChevronDirection): Variants {
-  const nudge =
-    direction === 'left'
-      ? { x: -2 }
-      : direction === 'right'
-        ? { x: 2 }
-        : direction === 'up'
-          ? { y: -2 }
-          : { y: 2 }
+/**
+ * The collapsed tab hides TAB_TUCK px behind the screen edge (only a
+ * TAB_SLIVER stays visible as the hover target) and pops out flush with the
+ * edge when hovered. The whole tab is the click target, so there is no
+ * separate chevron island. Reduced motion keeps the tab fully visible and
+ * still: no tuck, no pop.
+ */
+export function tabTuckVariants(dock: DockPosition, reduceMotion: boolean): Variants {
+  const pop = { type: 'spring', stiffness: 300, damping: 22 } as const
+  const tuck = reduceMotion ? 0 : TAB_TUCK
+  const offset =
+    dock === 'top'
+      ? { x: 0, y: -tuck }
+      : dock === 'left'
+        ? { x: -tuck, y: 0 }
+        : dock === 'right'
+          ? { x: tuck, y: 0 }
+          : { x: 0, y: tuck }
   return {
-    hidden: { x: 0, y: 0 },
-    visible: { x: 0, y: 0 },
-    peek: {
-      ...nudge,
-      transition: { type: 'spring', stiffness: 400, damping: 25 }
-    }
+    tucked: { ...offset, transition: reduceMotion ? INSTANT : pop },
+    popped: { x: 0, y: 0, transition: reduceMotion ? INSTANT : pop }
   }
 }
 

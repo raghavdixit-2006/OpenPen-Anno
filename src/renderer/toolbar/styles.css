@@ -18,25 +18,16 @@ body {
 
 /*
  * The toolbar window is dragged natively by the OS (`-webkit-app-region`:
- * drag on the handle regions only — the bar's grip and the collapsed glassy
- * circle). Chromium moves the window itself: no IPC, no per-frame setBounds,
- * and the renderer receives no pointer events over a drag region, so dragging
- * causes no re-renders. The circle's chevron island opts out below so it stays
- * clickable; everything else outside `.app-drag` (buttons, sliders) keeps its
- * hover/press feedback too.
+ * drag on the expanded bar's grip only). Chromium moves the window itself: no
+ * IPC, no per-frame setBounds, and the renderer receives no pointer events
+ * over a drag region, so dragging causes no re-renders. The collapsed tab is
+ * deliberately NOT a drag region: it has to see hover to pop out from behind
+ * the screen edge. Everything outside `.app-drag` stays clickable and keeps
+ * its hover/press feedback.
  */
 .app-drag {
   -webkit-app-region: drag;
   cursor: grab;
-}
-
-/*
- * Clickable island inside a drag region: the collapsed handle's 36px chevron
- * button (the ~10px annulus around it remains the drag surface).
- */
-.app-no-drag {
-  -webkit-app-region: no-drag;
-  cursor: pointer;
 }
 
 .ink-range {
