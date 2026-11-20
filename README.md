@@ -1,82 +1,96 @@
-# OpenPen Anno
+<div align="center">
+  <img src="resources/icon.png" width="96" alt="OpenPen Anno" />
 
-Draw on top of any Windows app. OpenPen Anno puts a transparent, always-on-top
-overlay over the screen; draw on it, then switch to passthrough so the apps
-underneath stay clickable while the ink stays visible.
+  <h1>OpenPen Anno</h1>
 
-Windows 10 (1903+) / Windows 11.
+  <p><strong>Draw on any Windows app. Then click straight through your ink.</strong></p>
 
-Repository: <https://github.com/raghavdixit-2006/OpenPen-Anno>
+[![Latest release](https://img.shields.io/github/v/release/raghavdixit-2006/OpenPen-Anno?style=flat-square&color=0a84ff)](https://github.com/raghavdixit-2006/OpenPen-Anno/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/raghavdixit-2006/OpenPen-Anno/total?style=flat-square&color=34c759)](https://github.com/raghavdixit-2006/OpenPen-Anno/releases)
+[![Windows](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078d4?style=flat-square)](https://github.com/raghavdixit-2006/OpenPen-Anno/releases/latest)
+</div>
 
-## Scripts
+![OpenPen Anno drawing over a browser](docs/media/hero.gif)
 
-```bash
-pnpm install
-pnpm dev          # electron-vite dev with HMR
-pnpm test         # engine unit tests (Vitest)
-pnpm typecheck
-pnpm build        # typecheck + production bundles
-pnpm build:win    # NSIS installer
-```
+OpenPen Anno is a transparent, always-on-top annotation layer for Windows. Draw
+over a browser, a document, a spreadsheet, or a call — then switch to
+**passthrough** and the ink stays visible while every click reaches the app
+underneath.
 
-## Hotkeys
+## Download
 
-| Shortcut     | Action                               |
-| ------------ | ------------------------------------ |
-| Ctrl+Shift+D | Toggle drawing / passthrough         |
-| Ctrl+Shift+C | Clear all strokes (undoable)         |
-| Ctrl+Z       | Undo — registered only while drawing |
-| Ctrl+Y       | Redo — registered only while drawing |
-| Ctrl+Shift+Q | Quit                                 |
+**→ [Download the latest installer](https://github.com/raghavdixit-2006/OpenPen-Anno/releases/latest)**
 
-Ctrl+Z/Ctrl+Y are captured globally only in drawing mode, so Chrome, Word and
-friends keep their own undo while the overlay is click-through.
+Windows 10 (1903+) and Windows 11 · 64-bit · ~120 MB
 
-## Layout
+The installer is not code-signed yet, so SmartScreen may warn on first run:
+choose **More info → Run anyway**.
 
-```
-src/main/       Electron main process: overlay + toolbar windows, hotkeys, IPC
-src/preload/    contextBridge API (contextIsolation, sandboxed)
-src/renderer/   overlay page (transparent canvas) and React toolbar
-src/engine/     framework-independent stroke model, renderer, history + tests
-src/shared/     IPC channel names and types shared by all processes
-```
+## Features
 
-## Toolbar
+- **Ten tools** — pen, highlighter, eraser (stroke or pixel), text, numbered
+  stamps, laser pointer, line, arrow, rectangle, ellipse.
+- **Ink that stays** — annotations remain on screen in passthrough without
+  blocking clicks.
+- **Freeze frame** — snapshot the screen, then annotate the still with 1–4×
+  zoom and pan.
+- **Backdrops** — whiteboard, blackboard, or a spotlight around the cursor.
+- **Annotated screenshots** — save the live screen plus your ink as a PNG.
+- **Multi-monitor** — follow the cursor or pin the overlay to one display.
+- **Out of the way** — dock the toolbar to any edge, or collapse it into a hover
+  tab.
+- **Keyboard-first** — global hotkeys, with Ctrl+Z captured only while drawing.
+- **Automatic updates** — installed builds update from GitHub.
 
-A floating control bar docks to any screen edge (bottom by default; the four
-dock buttons switch sides). It holds the pen / highlighter / eraser tools, an
-eight-colour palette, a brush-size slider, undo / redo / clear, and the
-draw/pass-through toggle. Everything is mirrored from the main process over
-IPC, so the toolbar and hotkeys never disagree.
 
-Collapse it with the chevron next to the grip. The bar becomes a **48×48
-rounded-square glass tab** inside a 64×64 DIP window. At rest the tab tucks
-36 px behind the screen edge, leaving a 12 px sliver as the hover target;
-hovering spring-pops it out flush and a click expands it. The whole tab is the
-click target, so it is intentionally **not** a native drag region — Windows
-drag regions never receive hover. Re-dock by expanding and dragging the bar's
-grip. Reduced-motion mode keeps the tab fully visible and still.
+## Getting started
 
-## Tray
+1. Install and launch. The toolbar docks to the bottom edge and the app starts
+   in passthrough.
+2. Press **Ctrl+Shift+D** or click the toolbar toggle to start drawing.
+3. Draw. Press it again to hand clicks back to the app underneath.
+4. **Ctrl+Shift+C** clears everything; **Ctrl+Z / Ctrl+Y** undo and redo while
+   drawing.
 
-The tray icon is the app's tertiary surface, useful when the toolbar is tucked
-behind the screen edge. Its menu can toggle Drawing mode, collapse the toolbar,
-clear all ink, toggle hardware acceleration, and quit.
+| Shortcut            | Action                          |
+| ------------------- | ------------------------------- |
+| `Ctrl+Shift+D`      | Toggle drawing / passthrough    |
+| `Ctrl+Shift+F`      | Toggle freeze frame             |
+| `Ctrl+Shift+C`      | Clear all ink                   |
+| `Ctrl+Z` / `Ctrl+Y` | Undo / redo (drawing mode only) |
+| `Ctrl+Shift+Q`      | Quit                            |
+
+## Tray menu
+
+Right-click the tray icon for drawing mode, backdrop, freeze frame, display,
+collapse, clear, **Save annotated screenshot…**, hardware acceleration, update
+checks, and quit.
 
 ## Settings
 
-Preferences are stored with `electron-store` in
-`%APPDATA%\openpen-anno\settings.json`:
+Preferences live in `%APPDATA%\openpen-anno\settings.json`: tool, colour, brush
+size, eraser mode, backdrop, dock side, collapsed state, and hardware
+acceleration. Drawing mode is never persisted — the app always starts in
+passthrough so a restart cannot leave the overlay swallowing clicks.
 
-- tool, colour, brush size
-- dock side and collapsed state
-- hardware-acceleration preference
+## Build from source
 
-Drawing mode is deliberately **not** persisted: the app always starts in
-passthrough so a restart cannot leave the overlay swallowing every click.
-Settings are written shortly after a change and flushed on quit.
+Requires Node.js 22+ and pnpm.
 
-Hardware acceleration is on by default. If it is turned off from the tray, the
-app offers to restart immediately; the change only takes effect on the next
-launch.
+```bash
+pnpm install
+pnpm dev          # development with HMR
+pnpm test         # engine unit tests
+pnpm typecheck
+pnpm build:win    # NSIS installer in dist/
+```
+
+```
+src/main/       Electron main: windows, hotkeys, tray, IPC
+src/preload/    sandboxed contextBridge API
+src/renderer/   overlay canvas, toolbar, popover, text editor
+src/engine/     framework-free stroke model, renderer, history
+src/shared/     IPC channels and shared types
+```
+
+Logs: `%APPDATA%\openpen-anno\logs\main.log`.
