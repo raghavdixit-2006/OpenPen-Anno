@@ -6,12 +6,16 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
     />
-    <title>Inkspace Overlay</title>
+    <title>OpenPen Anno Overlay</title>
   </head>
   <body data-mode="passthrough" data-tool="pen">
     <div id="stage">
-      <canvas id="committed"></canvas>
-      <canvas id="live"></canvas>
+      <canvas id="backdrop"></canvas>
+      <div id="viewport">
+        <canvas id="freeze"></canvas>
+        <canvas id="committed"></canvas>
+        <canvas id="live"></canvas>
+      </div>
       <div id="frame">
         <span id="badge">Drawing — Ctrl+Shift+D to pass through</span>
       </div>

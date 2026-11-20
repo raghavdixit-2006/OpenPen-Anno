@@ -1,15 +1,20 @@
 # AGENTS.md
 
-InkSpace: transparent always-on-top annotation overlay for Windows, built with
-Electron + React. Detailed context and decisions live in
-[`.opencode/context.md`](.opencode/context.md) — read it before larger changes.
+OpenPen Anno (formerly InkSpace): transparent always-on-top annotation
+overlay for Windows, built with Electron + React. Detailed context and
+decisions live in [`.opencode/context.md`](.opencode/context.md) — read it
+before larger changes.
+
+Repository: <https://github.com/raghavdixit-2006/OpenPen-Anno>
 
 ## Working agreement
 
-- The project is delivered in 5 approved steps. Implement only the current
-  step, then stop and report; do not add unrequested features.
-- Do not add dependencies without asking. Approved for later steps:
-  `perfect-freehand` (step 4), `electron-store` (step 5).
+- InkSpace v1 was delivered in 5 approved steps. OpenPen Anno v2 proceeds in
+  approved steps: implement only the current step, then stop and report; do not
+  add unrequested features.
+- Do not add dependencies without asking. Approved so far:
+  `perfect-freehand`, `electron-store`, `@playwright/test`, `electron-log`,
+  `electron-updater`.
 - No auth, backend, cloud, AI, or collaboration features.
 
 ## Commands
@@ -17,6 +22,7 @@ Electron + React. Detailed context and decisions live in
 ```bash
 pnpm dev            # Electron app; renderer HMR. Restart after main/preload edits (see below)
 pnpm test           # Vitest, only src/engine/**/*.test.ts
+pnpm test:e2e       # pnpm build + Playwright Electron E2E (launches the app)
 pnpm vitest run src/engine/history.test.ts        # single file
 pnpm vitest run src/engine/history.test.ts -t "undo"  # single test
 pnpm typecheck      # node + web tsconfigs, run both
@@ -73,7 +79,7 @@ pnpm build          # typecheck + electron-vite build
 
 - The Electron main/preload watcher is unreliable in this environment. If a
   main-process change seems ignored, restart `pnpm dev`.
-- Dev-only debug code is currently present and must be removed before release:
-  `src/main/diagnostics.ts`, its calls in `src/main/index.ts`, and the
-  `remote-debugging-port=9222` switch there.
+- Dev-only diagnostics were removed in v1 step 5: `src/main/diagnostics.ts` is
+  gone and there is no `remote-debugging-port=9222` switch. Add Playwright E2E
+  coverage instead of reintroducing CDP hooks.
 - `out/` is generated; never edit it.

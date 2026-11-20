@@ -1,7 +1,9 @@
-import { BrowserWindow, screen } from 'electron'
+import { BrowserWindow } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import type { OverlayMode } from '../shared/ipc'
+import { activeDisplay } from './display'
+import { guardNavigation } from './navigation'
 import { getState } from './state'
 import { raiseToolbar } from './toolbarWindow'
 
@@ -33,6 +35,11 @@ export function applyOverlayMode(mode: OverlayMode): void {
   if (!overlay || overlay.isDestroyed()) return
 
   if (mode === 'draw') {
+    // Follow the cursor onto whichever monitor the user is annotating before
+    // the window starts swallowing clicks. Re-bounding also makes Chromium
+    // re-read the display scale factor, so mixed-DPI desktops render at the
+    // right backing-store size.
+    syncOverlayBounds()
     overlay.setIgnoreMouseEvents(false)
   } else {
     overlay.setIgnoreMouseEvents(true, { forward: true })
@@ -44,14 +51,14 @@ export function applyOverlayMode(mode: OverlayMode): void {
   raiseToolbar()
 }
 
-/** Keep the overlay exactly on the primary display, in device-independent pixels. */
+/** Keep the overlay exactly on the active display, in device-independent pixels. */
 export function syncOverlayBounds(): void {
   if (!overlay || overlay.isDestroyed()) return
-  overlay.setBounds(screen.getPrimaryDisplay().bounds)
+  overlay.setBounds(activeDisplay().bounds)
 }
 
 export function createOverlayWindow(): BrowserWindow {
-  const bounds = screen.getPrimaryDisplay().bounds
+  const bounds = activeDisplay().bounds
 
   // Deliberately not `fullscreen: true`: that mode disables DWM transparency on
   // Windows, so the overlay would paint a solid rectangle over the desktop.
@@ -104,7 +111,7 @@ export function createOverlayWindow(): BrowserWindow {
   })
 
   overlay.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-  overlay.webContents.on('will-navigate', (event) => event.preventDefault())
+  guardNavigation(overlay.webContents)
 
   loadOverlay(overlay)
   return overlay

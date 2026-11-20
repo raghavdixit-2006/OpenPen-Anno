@@ -1,7 +1,9 @@
 import { app, globalShortcut } from 'electron'
+import { log } from './log'
 
 export interface ShortcutHandlers {
   toggleMode: () => void
+  toggleFreeze: () => void
   clear: () => void
   undo: () => void
   redo: () => void
@@ -14,7 +16,7 @@ let historyShortcutsBound = false
 function bind(accelerator: string, action: () => void): void {
   globalShortcut.unregister(accelerator)
   const ok = globalShortcut.register(accelerator, action)
-  if (!ok) console.error(`[inkspace] could not register global shortcut ${accelerator}`)
+  if (!ok) log.error(`[openpen-anno] could not register global shortcut ${accelerator}`)
 }
 
 /**
@@ -36,6 +38,7 @@ export function setHistoryShortcutsEnabled(enabled: boolean, handlers: ShortcutH
 
 export function registerShortcuts(handlers: ShortcutHandlers): void {
   bind('Control+Shift+D', handlers.toggleMode)
+  bind('Control+Shift+F', handlers.toggleFreeze)
   bind('Control+Shift+C', handlers.clear)
   bind('Control+Shift+Q', () => app.quit())
 

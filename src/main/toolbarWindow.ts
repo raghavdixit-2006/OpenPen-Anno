@@ -1,7 +1,9 @@
-import { BrowserWindow, screen, type Rectangle } from 'electron'
+import { BrowserWindow, type Rectangle } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import type { DockPosition } from '../shared/ipc'
+import { activeDisplay } from './display'
+import { guardNavigation } from './navigation'
 import { getState, patchState } from './state'
 
 /**
@@ -10,10 +12,10 @@ import { getState, patchState } from './state'
  * dock surface plus a shadow margin.
  */
 const DOCK_SIZE = {
-  horizontal: { width: 920, height: 80 },
-  // Wide enough to keep a shadow margin around the 88px bar surface (8px
-  // inset on each side).
-  vertical: { width: 104, height: 680 }
+  horizontal: { width: 800, height: 60 },
+  // Narrow and shallow: the rail keeps a shadow margin around the 88px bar
+  // surface (8px inset on each side) and stacks its controls in two columns.
+  vertical: { width: 104, height: 416 }
 } as const
 
 /**
@@ -42,7 +44,7 @@ export function raiseToolbar(): void {
 
 /** Centres the dock (or the collapsed glassy handle) flush on the requested edge of the work area. */
 function dockBounds(dock: DockPosition, collapsed: boolean): Rectangle {
-  const { workArea } = screen.getPrimaryDisplay()
+  const { workArea } = activeDisplay()
   const isVertical = dock === 'left' || dock === 'right'
   const { width, height } = collapsed
     ? COLLAPSED_SIZE
@@ -80,7 +82,7 @@ export function applyToolbarDock(dock: DockPosition, collapsed: boolean): void {
 /** Edge whose boundary is closest to the window's centre. */
 function nearestEdge(): DockPosition {
   const bounds = toolbar?.getBounds()
-  const { workArea } = screen.getPrimaryDisplay()
+  const { workArea } = activeDisplay()
   if (!bounds) return getState().dock
   const centreX = bounds.x + bounds.width / 2
   const centreY = bounds.y + bounds.height / 2
@@ -192,7 +194,7 @@ export function createToolbarWindow(): BrowserWindow {
   })
 
   toolbar.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-  toolbar.webContents.on('will-navigate', (event) => event.preventDefault())
+  guardNavigation(toolbar.webContents)
 
   loadToolbar(toolbar)
   return toolbar

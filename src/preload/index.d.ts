@@ -1,8 +1,8 @@
-import type { InkspaceApi } from '../shared/ipc'
+import type { OpenPenAnnoApi } from '../shared/ipc'
 
 declare global {
   interface Window {
-    api: InkspaceApi
+    api: OpenPenAnnoApi
   }
 }
 

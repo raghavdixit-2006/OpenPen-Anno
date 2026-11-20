@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { StrokeHistory } from './history'
+import { InkHistory } from './history'
 import { createStroke } from './stroke'
 import type { Point, Stroke } from './types'
 
@@ -9,14 +9,14 @@ function makeStroke(label: number): Stroke {
   return createStroke([point(label, label)])
 }
 
-describe('StrokeHistory', () => {
-  let history: StrokeHistory
+describe('InkHistory', () => {
+  let history: InkHistory
   let a: Stroke
   let b: Stroke
   let c: Stroke
 
   beforeEach(() => {
-    history = new StrokeHistory()
+    history = new InkHistory()
     a = makeStroke(1)
     b = makeStroke(2)
     c = makeStroke(3)
@@ -28,7 +28,7 @@ describe('StrokeHistory', () => {
     expect(history.canRedo).toBe(false)
   })
 
-  it('appends strokes in order', () => {
+  it('appends items in order', () => {
     history.add(a)
     history.add(b)
     expect(history.strokes).toEqual([a, b])
@@ -72,7 +72,7 @@ describe('StrokeHistory', () => {
     expect(history.strokes).toEqual([b])
   })
 
-  it('clears all strokes and lets the clear be undone', () => {
+  it('clears all items and lets the clear be undone', () => {
     history.add(a)
     history.add(b)
 
@@ -100,7 +100,7 @@ describe('StrokeHistory', () => {
     expect(history.strokes).toEqual([a])
   })
 
-  it('removes strokes by id as one undo step', () => {
+  it('removes items by id as one undo step', () => {
     history.add(a)
     history.add(b)
     history.add(c)

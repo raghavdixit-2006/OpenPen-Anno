@@ -4,7 +4,6 @@ import { useToolbarStore } from './store'
 import { dockMorph } from './geometry'
 import {
   CONTROL_VARIANTS,
-  TAP_SPRING,
   chevronSpin,
   surfaceVariants,
   tabTuckVariants,
@@ -12,57 +11,58 @@ import {
   tapProps
 } from './animation'
 import {
+  BackdropIcon,
   ChevronIcon,
   DockIcon,
-  EraserIcon,
-  HighlighterIcon,
+  FreezeIcon,
   PenIcon,
   PointerIcon,
   RedoIcon,
+  ScreenshotIcon,
+  ShapesIcon,
   TrashIcon,
   UndoIcon,
-  type ChevronDirection,
-  type IconComponent
+  type ChevronDirection
 } from './icons'
-import type { DockPosition, ToolId } from '../../shared/ipc'
-
-const PALETTE = [
-  '#ff2d2d',
-  '#ff8a00',
-  '#ffd60a',
-  '#34c759',
-  '#00c7be',
-  '#0a84ff',
-  '#bf5af2',
-  '#ffffff'
-] as const
-
-const TOOLS: Array<{ id: ToolId; label: string; Icon: IconComponent }> = [
-  { id: 'pen', label: 'Pen', Icon: PenIcon },
-  { id: 'highlighter', label: 'Highlighter', Icon: HighlighterIcon },
-  { id: 'eraser', label: 'Eraser', Icon: EraserIcon }
-]
-
-const DOCK_OPTIONS: Array<{ id: DockPosition; label: string }> = [
-  { id: 'bottom', label: 'Dock at the bottom' },
-  { id: 'top', label: 'Dock at the top' },
-  { id: 'left', label: 'Dock on the left' },
-  { id: 'right', label: 'Dock on the right' }
-]
+import {
+  BACKDROP_LABELS,
+  DOCK_OPTIONS,
+  SHAPE_TOOLS,
+  TOOLS,
+  nextBackdrop,
+  optionsKindFor
+} from './catalog'
+import type { PopoverAnchor, PopoverKind, ToolId } from '../../shared/ipc'
 
 const ICON_BUTTON =
   'grid shrink-0 place-items-center rounded-lg text-zinc-400 transition-colors enabled:hover:bg-white/10 enabled:hover:text-zinc-100 disabled:cursor-default disabled:opacity-30'
+
+/**
+ * The toolbar window only owns the rail itself: colour, size, eraser mode and
+ * the shape picker live in a separate options window (see `popoverWindow.ts`).
+ * The trigger rect is sent in this window's CSS pixels; main adds the window
+ * origin so panel placement stays correct on scaled displays.
+ */
+function panelAnchor(element: HTMLElement): PopoverAnchor {
+  const rect = element.getBoundingClientRect()
+  return {
+    x: Math.round(rect.left),
+    y: Math.round(rect.top),
+    width: Math.round(rect.width),
+    height: Math.round(rect.height)
+  }
+}
 
 function Grip({ vertical }: { vertical: boolean }): ReactElement {
   return (
     <motion.div
       variants={CONTROL_VARIANTS}
       className={`app-drag flex shrink-0 items-center justify-center ${
-        vertical ? 'h-8 w-11' : 'h-11 w-8'
+        vertical ? 'h-4 w-full' : 'h-9 w-6'
       }`}
       aria-hidden="true"
     >
-      <span className={`rounded-full bg-white/25 ${vertical ? 'h-6 w-1' : 'h-1 w-6'}`} />
+      <span className={`rounded-full bg-white/25 ${vertical ? 'h-1 w-6' : 'h-5 w-1'}`} />
     </motion.div>
   )
 }
@@ -71,77 +71,36 @@ function Divider({ vertical }: { vertical: boolean }): ReactElement {
   return (
     <motion.div
       variants={CONTROL_VARIANTS}
-      className={`shrink-0 bg-white/15 ${vertical ? 'h-px w-6' : 'h-6 w-px'}`}
+      className={`shrink-0 bg-white/15 ${vertical ? 'h-px w-full' : 'h-5 w-px'}`}
       aria-hidden="true"
     />
-  )
-}
-
-function SizeControl({ vertical }: { vertical: boolean }): ReactElement {
-  const size = useToolbarStore((state) => state.size)
-  const changeSize = useToolbarStore((state) => state.changeSize)
-
-  if (vertical) {
-    return (
-      <motion.div variants={CONTROL_VARIANTS} className="flex shrink-0 flex-col items-center gap-1">
-        <div className="relative h-24 w-4 shrink-0">
-          <input
-            type="range"
-            min={1}
-            max={32}
-            step={1}
-            value={size}
-            aria-label="Brush size"
-            onChange={(event) => changeSize(Number(event.target.value))}
-            className="ink-range ink-range-vertical"
-          />
-        </div>
-        <span className="text-[11px] font-medium tabular-nums text-zinc-400">{size}</span>
-      </motion.div>
-    )
-  }
-
-  return (
-    <motion.div variants={CONTROL_VARIANTS} className="flex shrink-0 items-center gap-2">
-      <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-        Size
-      </span>
-      <input
-        type="range"
-        min={1}
-        max={32}
-        step={1}
-        value={size}
-        aria-label="Brush size"
-        onChange={(event) => changeSize(Number(event.target.value))}
-        className="ink-range w-[80px]"
-      />
-      <span className="w-4 text-right text-[11px] font-medium tabular-nums text-zinc-400">
-        {size}
-      </span>
-    </motion.div>
   )
 }
 
 export default function App(): ReactElement {
   const mode = useToolbarStore((state) => state.mode)
   const tool = useToolbarStore((state) => state.tool)
-  const color = useToolbarStore((state) => state.color)
+  const backdrop = useToolbarStore((state) => state.backdrop)
+  const frozen = useToolbarStore((state) => state.frozen)
   const dock = useToolbarStore((state) => state.dock)
   const collapsed = useToolbarStore((state) => state.collapsed)
   const canUndo = useToolbarStore((state) => state.canUndo)
   const canRedo = useToolbarStore((state) => state.canRedo)
 
   const selectTool = useToolbarStore((state) => state.selectTool)
-  const selectColor = useToolbarStore((state) => state.selectColor)
+  const changeBackdrop = useToolbarStore((state) => state.changeBackdrop)
+  const toggleFrozen = useToolbarStore((state) => state.toggleFrozen)
   const moveDock = useToolbarStore((state) => state.moveDock)
   const toggleCollapsed = useToolbarStore((state) => state.toggleCollapsed)
   const toggleMode = useToolbarStore((state) => state.toggleMode)
   const undo = useToolbarStore((state) => state.undo)
   const redo = useToolbarStore((state) => state.redo)
   const clear = useToolbarStore((state) => state.clear)
+  const saveScreenshot = useToolbarStore((state) => state.saveScreenshot)
 
   const reduce = useReducedMotion() === true
+  const activeShape = SHAPE_TOOLS.find((shape) => shape.id === tool)
+  const ShapeIcon = activeShape?.Icon ?? ShapesIcon
 
   /**
    * Collapse is optimistic: the bar folds first, and only when the fold has
@@ -210,6 +169,18 @@ export default function App(): ReactElement {
 
   const tuckV = useMemo(() => tabTuckVariants(dock, reduce), [dock, reduce])
 
+  const openOptions = (kind: PopoverKind, element: HTMLElement): void => {
+    window.api.toolbar.openPopover({ kind, anchor: panelAnchor(element) })
+  }
+
+  const chooseTool = (id: ToolId, element: HTMLElement): void => {
+    selectTool(id)
+    const kind = optionsKindFor(id)
+    if (kind) openOptions(kind, element)
+  }
+
+  const toolSize = vertical ? 'h-7 w-full' : 'h-8 w-8'
+
   return (
     <MotionConfig reducedMotion="user">
       <div className="relative h-full w-full">
@@ -221,15 +192,15 @@ export default function App(): ReactElement {
                 initial="collapsed"
                 animate="expanded"
                 exit="collapsed"
-                className={`flex h-full w-full items-center bg-zinc-950/85 text-zinc-300 ring-1 ring-white/10 ${
+                className={`flex h-full w-full items-center bg-zinc-950/90 text-zinc-300 ring-1 ring-white/10 ${
                   vertical
-                    ? 'flex-col justify-center gap-1.5 rounded-[22px] px-2 py-3'
-                    : 'flex-row gap-2 rounded-[20px] px-3'
+                    ? 'flex-col justify-center gap-1.5 rounded-[20px] px-1.5 py-2'
+                    : 'flex-row gap-1 rounded-[16px] px-2.5'
                 }`}
                 style={{
                   transformOrigin: `${morph.originX}% ${morph.originY}%`,
                   boxShadow:
-                    '0 12px 30px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.07)'
+                    '0 10px 26px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06)'
                 }}
               >
                 <Grip vertical={vertical} />
@@ -238,7 +209,7 @@ export default function App(): ReactElement {
                   type="button"
                   variants={CONTROL_VARIANTS}
                   {...tapProps}
-                  className={`${ICON_BUTTON} h-6 w-6 shrink-0`}
+                  className={`${ICON_BUTTON} h-6 w-6`}
                   title="Collapse toolbar"
                   aria-label="Collapse toolbar"
                   aria-expanded={true}
@@ -248,14 +219,14 @@ export default function App(): ReactElement {
                     {...chevronSpin('in', reduce)}
                     className="grid h-full w-full place-items-center"
                   >
-                    <ChevronIcon direction={collapseDirection} className="h-4 w-4" />
+                    <ChevronIcon direction={collapseDirection} className="h-3.5 w-3.5" />
                   </motion.span>
                 </motion.button>
 
                 <motion.div
                   variants={CONTROL_VARIANTS}
-                  className={`flex shrink-0 gap-1 rounded-xl bg-white/[0.07] p-1 ring-1 ring-white/10 ${
-                    vertical ? 'flex-col' : 'flex-row'
+                  className={`grid shrink-0 gap-1 rounded-xl bg-white/[0.06] p-1 ring-1 ring-white/10 ${
+                    vertical ? 'w-full grid-cols-2' : 'grid-flow-col'
                   }`}
                 >
                   {TOOLS.map(({ id, label, Icon }) => (
@@ -267,90 +238,136 @@ export default function App(): ReactElement {
                       title={label}
                       aria-label={label}
                       aria-pressed={tool === id}
-                      onClick={() => selectTool(id)}
-                      className={`grid h-8 w-9 place-items-center rounded-lg transition-colors ${
+                      onClick={(event) => chooseTool(id, event.currentTarget)}
+                      className={`grid place-items-center rounded-lg transition-colors ${toolSize} ${
                         tool === id
                           ? 'bg-zinc-100 text-zinc-900 shadow-[0_1px_3px_rgba(0,0,0,0.5)]'
                           : 'text-zinc-400 hover:text-zinc-100'
                       }`}
                     >
-                      <Icon className="h-[18px] w-[18px]" />
+                      <Icon className={vertical ? 'h-4 w-4' : 'h-[18px] w-[18px]'} />
                     </motion.button>
                   ))}
-                </motion.div>
 
-                <motion.div
-                  variants={CONTROL_VARIANTS}
-                  className={`shrink-0 ${
-                    vertical ? 'grid grid-cols-2 gap-2 py-1' : 'flex items-center gap-1.5'
-                  }`}
-                >
-                  {PALETTE.map((swatch) => {
-                    const selected = swatch === color
-                    return (
-                      <motion.button
-                        key={swatch}
-                        type="button"
-                        variants={CONTROL_VARIANTS}
-                        whileHover={{ scale: 1.18 }}
-                        whileTap={{ scale: 0.85 }}
-                        transition={TAP_SPRING}
-                        title={swatch}
-                        aria-label={`Colour ${swatch}`}
-                        aria-pressed={selected}
-                        onClick={() => selectColor(swatch)}
-                        style={{ backgroundColor: swatch }}
-                        className={`h-[18px] w-[18px] rounded-full border border-white/25 ${
-                          selected ? 'ring-2 ring-white ring-offset-2 ring-offset-zinc-950' : ''
-                        }`}
-                      />
-                    )
-                  })}
-                </motion.div>
+                  {/* One slot for all four shape tools: it pops out the shape
+                      picker plus the shared colour and size controls. */}
+                  <motion.button
+                    type="button"
+                    variants={CONTROL_VARIANTS}
+                    {...tapProps}
+                    title="Shapes"
+                    aria-label="Shapes"
+                    aria-haspopup="dialog"
+                    onClick={(event) => openOptions('shapes', event.currentTarget)}
+                    className={`grid place-items-center rounded-lg transition-colors ${toolSize} ${
+                      activeShape
+                        ? 'bg-white/15 text-zinc-100'
+                        : 'text-zinc-400 hover:text-zinc-100'
+                    }`}
+                  >
+                    <ShapeIcon className={vertical ? 'h-4 w-4' : 'h-[18px] w-[18px]'} />
+                  </motion.button>
 
-                <SizeControl vertical={vertical} />
+                  {/* Backdrop is a display toggle, not a tool; one click cycles
+                      none → whiteboard → blackboard → spotlight. */}
+                  <motion.button
+                    type="button"
+                    variants={CONTROL_VARIANTS}
+                    {...tapProps}
+                    title={`Backdrop: ${BACKDROP_LABELS[backdrop]} — click to cycle`}
+                    aria-label={`Backdrop: ${BACKDROP_LABELS[backdrop]}, click to cycle`}
+                    aria-pressed={backdrop !== 'none'}
+                    onClick={() => changeBackdrop(nextBackdrop(backdrop))}
+                    className={`grid place-items-center rounded-lg transition-colors ${toolSize} ${
+                      backdrop !== 'none'
+                        ? 'bg-white/15 text-zinc-100'
+                        : 'text-zinc-400 hover:text-zinc-100'
+                    }`}
+                  >
+                    <BackdropIcon
+                      mode={backdrop}
+                      className={vertical ? 'h-4 w-4' : 'h-[18px] w-[18px]'}
+                    />
+                  </motion.button>
+
+                  {/* Freeze-frame: pauses the screen under the ink and turns on
+                      wheel zoom plus middle/right-drag panning in the overlay. */}
+                  <motion.button
+                    type="button"
+                    variants={CONTROL_VARIANTS}
+                    {...tapProps}
+                    title={
+                      frozen
+                        ? 'Frozen frame — click to resume (Ctrl+Shift+F)'
+                        : 'Freeze frame (Ctrl+Shift+F)'
+                    }
+                    aria-label={frozen ? 'Frozen frame, click to resume' : 'Freeze frame'}
+                    aria-pressed={frozen}
+                    onClick={toggleFrozen}
+                    className={`grid place-items-center rounded-lg transition-colors ${
+                      vertical ? 'col-span-2 h-7 w-full' : 'h-8 w-8'
+                    } ${frozen ? 'bg-sky-500/25 text-sky-200' : 'text-zinc-400 hover:text-zinc-100'}`}
+                  >
+                    <FreezeIcon className={vertical ? 'h-4 w-4' : 'h-[18px] w-[18px]'} />
+                  </motion.button>
+                </motion.div>
 
                 <Divider vertical={vertical} />
 
                 <motion.div
                   variants={CONTROL_VARIANTS}
-                  className={`flex shrink-0 items-center gap-0.5 ${vertical ? 'flex-col' : 'flex-row'}`}
+                  className={`shrink-0 gap-0.5 ${
+                    vertical ? 'grid w-full grid-cols-2' : 'flex flex-row items-center'
+                  }`}
                 >
                   <motion.button
                     type="button"
                     variants={CONTROL_VARIANTS}
                     {...tapProps}
-                    className={`${ICON_BUTTON} h-8 w-8`}
+                    className={`${ICON_BUTTON} ${vertical ? 'h-7 w-full' : 'h-8 w-8'}`}
                     title="Undo (Ctrl+Z)"
                     aria-label="Undo"
                     disabled={!canUndo}
                     onClick={undo}
                   >
-                    <UndoIcon className="h-[17px] w-[17px]" />
+                    <UndoIcon className={vertical ? 'h-4 w-4' : 'h-[17px] w-[17px]'} />
                   </motion.button>
                   <motion.button
                     type="button"
                     variants={CONTROL_VARIANTS}
                     {...tapProps}
-                    className={`${ICON_BUTTON} h-8 w-8`}
+                    className={`${ICON_BUTTON} ${vertical ? 'h-7 w-full' : 'h-8 w-8'}`}
                     title="Redo (Ctrl+Y)"
                     aria-label="Redo"
                     disabled={!canRedo}
                     onClick={redo}
                   >
-                    <RedoIcon className="h-[17px] w-[17px]" />
+                    <RedoIcon className={vertical ? 'h-4 w-4' : 'h-[17px] w-[17px]'} />
                   </motion.button>
                   <motion.button
                     type="button"
                     variants={CONTROL_VARIANTS}
                     {...tapProps}
-                    className={`${ICON_BUTTON} h-8 w-8 enabled:hover:text-red-400`}
+                    className={`${ICON_BUTTON} ${vertical ? 'h-7 w-full' : 'h-8 w-8'}`}
+                    title="Save annotated screenshot"
+                    aria-label="Save annotated screenshot"
+                    onClick={saveScreenshot}
+                  >
+                    <ScreenshotIcon className={vertical ? 'h-4 w-4' : 'h-[17px] w-[17px]'} />
+                  </motion.button>
+                  <motion.button
+                    type="button"
+                    variants={CONTROL_VARIANTS}
+                    {...tapProps}
+                    className={`${ICON_BUTTON} enabled:hover:text-red-400 ${
+                      vertical ? 'h-7 w-full' : 'h-8 w-8'
+                    }`}
                     title="Clear all (Ctrl+Shift+C)"
                     aria-label="Clear all"
                     disabled={!canUndo}
                     onClick={clear}
                   >
-                    <TrashIcon className="h-[17px] w-[17px]" />
+                    <TrashIcon className={vertical ? 'h-4 w-4' : 'h-[17px] w-[17px]'} />
                   </motion.button>
                 </motion.div>
 
@@ -370,26 +387,22 @@ export default function App(): ReactElement {
                   aria-pressed={drawing}
                   className={`shrink-0 font-semibold transition-colors ${
                     vertical
-                      ? 'grid h-10 w-10 place-items-center rounded-xl'
-                      : 'ml-auto flex h-9 items-center gap-2 rounded-xl px-3 text-xs'
+                      ? 'grid h-9 w-full place-items-center rounded-xl'
+                      : 'ml-auto flex h-8 items-center gap-1.5 rounded-lg px-2 text-[11px]'
                   } ${
                     drawing
-                      ? 'bg-red-500 text-white shadow-[0_6px_16px_rgba(239,68,68,0.35)] hover:bg-red-600'
+                      ? 'bg-red-500 text-white shadow-[0_4px_14px_rgba(239,68,68,0.35)] hover:bg-red-600'
                       : 'bg-white/10 text-zinc-300 hover:bg-white/[0.16] hover:text-white'
                   }`}
                 >
-                  {drawing ? (
-                    <PenIcon className="h-[17px] w-[17px]" />
-                  ) : (
-                    <PointerIcon className="h-[17px] w-[17px]" />
-                  )}
+                  {drawing ? <PenIcon className="h-4 w-4" /> : <PointerIcon className="h-4 w-4" />}
                   {!vertical && <span>{drawing ? 'Drawing' : 'Pass-through'}</span>}
                 </motion.button>
 
                 <motion.div
                   variants={CONTROL_VARIANTS}
-                  className={`flex shrink-0 gap-0.5 ${
-                    vertical ? 'w-full flex-wrap justify-center' : 'items-center'
+                  className={`shrink-0 gap-0.5 ${
+                    vertical ? 'grid w-full grid-cols-4' : 'flex items-center'
                   }`}
                   role="group"
                   aria-label="Dock position"
@@ -406,13 +419,15 @@ export default function App(): ReactElement {
                         aria-label={label}
                         aria-pressed={selected}
                         onClick={() => moveDock(id)}
-                        className={`grid h-6 w-6 place-items-center rounded-md ${
+                        className={`grid place-items-center rounded-md ${
+                          vertical ? 'h-5 w-full' : 'h-6 w-6'
+                        } ${
                           selected
                             ? 'bg-white/10 text-zinc-100'
                             : 'text-zinc-600 hover:bg-white/5 hover:text-zinc-300'
                         }`}
                       >
-                        <DockIcon position={id} className="h-[15px] w-[15px]" />
+                        <DockIcon position={id} className="h-[14px] w-[14px]" />
                       </motion.button>
                     )
                   })}

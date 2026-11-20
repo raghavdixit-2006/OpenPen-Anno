@@ -1,17 +1,28 @@
 import { create } from 'zustand'
-import type { DockPosition, OverlayMode, OverlayState, ToolId } from '../../shared/ipc'
+import type {
+  BackdropMode,
+  DockPosition,
+  EraserMode,
+  OverlayMode,
+  OverlayState,
+  ToolId
+} from '../../shared/ipc'
 
 interface ToolbarStore extends OverlayState {
   applyState: (state: OverlayState) => void
   selectTool: (tool: ToolId) => void
   selectColor: (color: string) => void
   changeSize: (size: number) => void
+  changeEraserMode: (mode: EraserMode) => void
+  changeBackdrop: (mode: BackdropMode) => void
+  toggleFrozen: () => void
   moveDock: (dock: DockPosition) => void
   toggleCollapsed: (collapsed: boolean) => void
   toggleMode: () => void
   undo: () => void
   redo: () => void
   clear: () => void
+  saveScreenshot: () => void
 }
 
 export const useToolbarStore = create<ToolbarStore>((set, get) => ({
@@ -19,6 +30,9 @@ export const useToolbarStore = create<ToolbarStore>((set, get) => ({
   tool: 'pen',
   color: '#ff2d2d',
   size: 4,
+  eraserMode: 'stroke',
+  backdrop: 'none',
+  frozen: false,
   dock: 'bottom',
   collapsed: false,
   canUndo: false,
@@ -41,6 +55,21 @@ export const useToolbarStore = create<ToolbarStore>((set, get) => ({
     set({ size })
     window.api.toolbar.setSize(size)
   },
+  changeEraserMode: (eraserMode) => {
+    set({ eraserMode })
+    window.api.toolbar.setEraserMode(eraserMode)
+  },
+  changeBackdrop: (backdrop) => {
+    set({ backdrop })
+    window.api.toolbar.setBackdrop(backdrop)
+  },
+  // Freezing also switches to drawing mode in main; the optimistic flag only
+  // updates this button, while the mode change arrives on the next broadcast.
+  toggleFrozen: () => {
+    const frozen = !get().frozen
+    set({ frozen })
+    window.api.toolbar.setFrozen(frozen)
+  },
   // Dock and collapse change the window's bounds, so they wait for the main
   // process broadcast: the new layout must mount only after the window has
   // already been resized, otherwise the transition starts clipped.
@@ -53,5 +82,6 @@ export const useToolbarStore = create<ToolbarStore>((set, get) => ({
   },
   undo: () => window.api.toolbar.undo(),
   redo: () => window.api.toolbar.redo(),
-  clear: () => window.api.toolbar.clear()
+  clear: () => window.api.toolbar.clear(),
+  saveScreenshot: () => window.api.toolbar.saveScreenshot()
 }))

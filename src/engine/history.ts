@@ -1,16 +1,16 @@
-import type { Stroke } from './types'
+import type { InkItem } from './types'
 
 /**
- * Snapshot history. Each undo/redo step stores the stroke list as an array of
- * shared, immutable Stroke objects, so a step costs one array copy, not a copy
- * of every point.
+ * Snapshot history. Each undo/redo step stores the item list as an array of
+ * shared, immutable annotation objects, so a step costs one array copy, not a
+ * copy of every point.
  */
-export class StrokeHistory {
-  private past: Stroke[][] = []
-  private future: Stroke[][] = []
-  private current: Stroke[] = []
+export class InkHistory {
+  private past: InkItem[][] = []
+  private future: InkItem[][] = []
+  private current: InkItem[] = []
 
-  get strokes(): readonly Stroke[] {
+  get strokes(): readonly InkItem[] {
     return this.current
   }
 
@@ -22,23 +22,23 @@ export class StrokeHistory {
     return this.future.length > 0
   }
 
-  add(stroke: Stroke): void {
-    this.commit([...this.current, stroke])
+  add(item: InkItem): void {
+    this.commit([...this.current, item])
   }
 
-  /** Clears every stroke. Kept in history so an accidental clear can be undone. */
+  /** Clears every item. Kept in history so an accidental clear can be undone. */
   clear(): boolean {
     if (this.current.length === 0) return false
     this.commit([])
     return true
   }
 
-  /** Removes strokes by id as a single undo step (stroke-level erasing). */
+  /** Removes items by id as a single undo step (stroke-level erasing). */
   remove(ids: Iterable<string>): boolean {
     const doomed = new Set(ids)
     if (doomed.size === 0) return false
 
-    const next = this.current.filter((stroke) => !doomed.has(stroke.id))
+    const next = this.current.filter((item) => !doomed.has(item.id))
     if (next.length === this.current.length) return false
 
     this.commit(next)
@@ -61,7 +61,7 @@ export class StrokeHistory {
     return true
   }
 
-  private commit(next: Stroke[]): void {
+  private commit(next: InkItem[]): void {
     this.past.push(this.current)
     this.current = next
     // A fresh edit invalidates the redo branch.

@@ -19,12 +19,25 @@ body {
   touch-action: none;
 }
 
+/* Backdrop sits below the ink so whiteboard/blackboard/spotlight never cover
+   committed annotations. */
+#backdrop,
 #committed,
-#live {
+#live,
+#freeze {
   position: absolute;
   inset: 0;
   display: block;
   pointer-events: none;
+}
+
+/* Frozen screenshot + ink share one zoom/pan transform, so annotations stay
+   locked to the pixels they were drawn over. */
+#viewport {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+  will-change: transform;
 }
 
 body[data-mode='draw'] #stage {
@@ -33,6 +46,14 @@ body[data-mode='draw'] #stage {
 
 body[data-tool='eraser'] #stage {
   cursor: none;
+}
+
+body[data-tool='text'] #stage {
+  cursor: text;
+}
+
+body[data-panning='true'] #stage {
+  cursor: grabbing;
 }
 
 /* Visible affordance that the overlay is currently eating clicks. */

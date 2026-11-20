@@ -11,7 +11,7 @@ import type { Plugin } from 'vite'
  */
 function relaxCspForDev(): Plugin {
   return {
-    name: 'inkspace:dev-csp',
+    name: 'openpen-anno:dev-csp',
     apply: 'serve',
     transformIndexHtml(html) {
       return html.replace("script-src 'self'", "script-src 'self' 'unsafe-inline'")
@@ -28,7 +28,9 @@ export default defineConfig({
       rollupOptions: {
         input: {
           overlay: resolve(__dirname, 'src/renderer/overlay/index.html'),
-          toolbar: resolve(__dirname, 'src/renderer/toolbar/index.html')
+          toolbar: resolve(__dirname, 'src/renderer/toolbar/index.html'),
+          popover: resolve(__dirname, 'src/renderer/popover/index.html'),
+          text: resolve(__dirname, 'src/renderer/text/index.html')
         }
       }
     }

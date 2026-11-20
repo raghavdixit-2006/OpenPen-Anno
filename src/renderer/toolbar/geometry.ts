@@ -7,10 +7,10 @@ import type { DockPosition } from '../../shared/ipc'
  * visible sliver occupies. Keep both files in sync.
  */
 export const EXPANDED_WINDOW = {
-  horizontal: { width: 920, height: 80 },
+  horizontal: { width: 800, height: 60 },
   // Wide enough to keep a shadow margin around the 88px bar surface (8px
   // inset each side).
-  vertical: { width: 104, height: 680 }
+  vertical: { width: 104, height: 416 }
 } as const
 
 /**

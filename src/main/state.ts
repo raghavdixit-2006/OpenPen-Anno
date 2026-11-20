@@ -1,7 +1,9 @@
 import { BrowserWindow } from 'electron'
 import {
   IPC,
+  type BackdropMode,
   type DockPosition,
+  type EraserMode,
   type HistoryStatus,
   type OverlayMode,
   type OverlayState,
@@ -13,6 +15,9 @@ const state: OverlayState = {
   tool: 'pen',
   color: '#ff2d2d',
   size: 4,
+  eraserMode: 'stroke',
+  backdrop: 'none',
+  frozen: false,
   dock: 'bottom',
   collapsed: false,
   canUndo: false,
@@ -23,6 +28,20 @@ const listeners = new Set<(state: OverlayState) => void>()
 
 export function getState(): OverlayState {
   return state
+}
+
+/**
+ * Seeds the toolbar preferences from persisted settings. Called once during
+ * startup, before any window exists, so there are no listeners to notify and
+ * no broadcast to send.
+ */
+export function hydrateState(
+  preferences: Pick<
+    OverlayState,
+    'tool' | 'color' | 'size' | 'eraserMode' | 'backdrop' | 'dock' | 'collapsed'
+  >
+): void {
+  Object.assign(state, preferences)
 }
 
 export function onStateChange(listener: (state: OverlayState) => void): void {
@@ -59,7 +78,26 @@ export function isOverlayMode(value: unknown): value is OverlayMode {
 }
 
 export function isToolId(value: unknown): value is ToolId {
-  return value === 'pen' || value === 'highlighter' || value === 'eraser'
+  return (
+    value === 'pen' ||
+    value === 'highlighter' ||
+    value === 'eraser' ||
+    value === 'text' ||
+    value === 'laser' ||
+    value === 'stamp' ||
+    value === 'line' ||
+    value === 'arrow' ||
+    value === 'rect' ||
+    value === 'ellipse'
+  )
+}
+
+export function isEraserMode(value: unknown): value is EraserMode {
+  return value === 'stroke' || value === 'pixel'
+}
+
+export function isBackdrop(value: unknown): value is BackdropMode {
+  return value === 'none' || value === 'white' || value === 'black' || value === 'spotlight'
 }
 
 export function isDockPosition(value: unknown): value is DockPosition {

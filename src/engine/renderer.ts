@@ -1,6 +1,11 @@
+import { paintEraserStroke } from './eraser'
+import { getItemBounds } from './items'
+import { paintLaser, type LaserPoint } from './laser'
+import { paintShape } from './shape'
+import { paintStamp } from './stamp'
+import { paintText } from './text'
 import { strokeOutline } from './outline'
-import { getStrokeBounds } from './stroke'
-import type { Bounds, Point, Stroke, StrokeStyle } from './types'
+import type { Bounds, InkItem, Point, Shape, Stroke, StrokeStyle } from './types'
 
 /**
  * Fills a prepared outline polygon. perfect-freehand has already smoothed the
@@ -89,6 +94,29 @@ interface PixelRect {
 }
 
 /**
+ * Paints one item on any 2D context. The outline cache is optional: interactive
+ * layers pass theirs, while one-off composites (saved screenshots) can let the
+ * stroke be outlined on demand.
+ */
+export function paintItem(
+  ctx: CanvasRenderingContext2D,
+  item: InkItem,
+  outline?: readonly (readonly number[])[]
+): void {
+  if (item.kind === 'freehand') {
+    paintOutlined(ctx, outline ?? strokeOutline(item.points, item.style), item.style)
+  } else if (item.kind === 'shape') {
+    paintShape(ctx, item)
+  } else if (item.kind === 'eraser') {
+    paintEraserStroke(ctx, item)
+  } else if (item.kind === 'text') {
+    paintText(ctx, item)
+  } else if (item.kind === 'stamp') {
+    paintStamp(ctx, item)
+  }
+}
+
+/**
  * Owns the two stacked canvases: the committed layer (finished strokes) and the
  * live layer (the stroke currently under the pointer).
  *
@@ -157,28 +185,28 @@ export class OverlayRenderer {
   }
 
   /** Full repaint of the committed layer. Used for undo/redo/clear/erase. */
-  renderStrokes(strokes: readonly Stroke[]): void {
+  renderItems(items: readonly InkItem[]): void {
     clearCanvas(this.committedCtx, this.committedCanvas)
-    for (const stroke of strokes) {
-      paintOutlined(this.committedCtx, this.outlineFor(stroke), stroke.style)
+    for (const item of items) {
+      this.paintItemOn(this.committedCtx, item)
     }
   }
 
-  /** Adds one finished stroke without touching the rest of the layer. */
-  paintStroke(stroke: Stroke): void {
-    paintOutlined(this.committedCtx, this.outlineFor(stroke), stroke.style)
+  /** Adds one finished item without touching the rest of the layer. */
+  paintItem(item: InkItem): void {
+    this.paintItemOn(this.committedCtx, item)
   }
 
   /**
    * Repaints only `region` of the committed layer. Used by the eraser so it can
-   * remove strokes without clearing the whole screen.
+   * remove items without clearing the whole screen.
    */
-  repaintCommittedRegion(strokes: readonly Stroke[], region: Bounds): void {
+  repaintItemRegion(items: readonly InkItem[], region: Bounds): void {
     this.repaintRegion(this.committedCtx, region, () => {
-      for (const stroke of strokes) {
-        const bounds = getStrokeBounds(stroke)
+      for (const item of items) {
+        const bounds = getItemBounds(item)
         if (bounds && intersects(bounds, region)) {
-          paintOutlined(this.committedCtx, this.outlineFor(stroke), stroke.style)
+          this.paintItemOn(this.committedCtx, item)
         }
       }
     })
@@ -218,6 +246,42 @@ export class OverlayRenderer {
     const outline = strokeOutline(points, style, false)
     this.repaintRegion(this.liveCtx, dirty, () => {
       paintOutlined(this.liveCtx, outline, style)
+    })
+  }
+
+  /**
+   * Live shape preview. Shapes are cheap to flatten, so the live layer is
+   * simply cleared and redrawn on every animation frame.
+   */
+  renderLiveShape(shape: Shape): void {
+    clearCanvas(this.liveCtx, this.liveCanvas)
+    this.resetLiveState()
+    this.cursorBounds = null
+    paintShape(this.liveCtx, shape)
+  }
+
+  /**
+   * Transient laser trail. The live layer is fully cleared each frame because
+   * expiry moves points backwards and a per-frame diff would be more complex
+   * than the repaint it saves.
+   */
+  renderLaser(points: readonly LaserPoint[], now: number): void {
+    clearCanvas(this.liveCtx, this.liveCanvas)
+    this.resetLiveState()
+    this.cursorBounds = null
+    paintLaser(this.liveCtx, points, now)
+  }
+
+  /**
+   * Pixel eraser preview: clears the touched pixels on the committed layer.
+   * Destination-out is idempotent, so the full path is redrawn per frame.
+   */
+  renderEraseTrail(points: readonly Point[], radius: number): void {
+    paintEraserStroke(this.committedCtx, {
+      id: 'live-eraser',
+      kind: 'eraser',
+      points,
+      radius
     })
   }
 
@@ -282,6 +346,11 @@ export class OverlayRenderer {
     const outline = strokeOutline(stroke.points, stroke.style)
     this.outlineCache.set(stroke, outline)
     return outline
+  }
+
+  /** Paints one item; new kinds add a branch in the shared painter. */
+  private paintItemOn(ctx: CanvasRenderingContext2D, item: InkItem): void {
+    paintItem(ctx, item, item.kind === 'freehand' ? this.outlineFor(item) : undefined)
   }
 
   /** Snaps CSS-pixel bounds to one integer device-pixel rectangle. */

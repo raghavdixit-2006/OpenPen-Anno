@@ -52,19 +52,6 @@ body {
 }
 
 /*
- * Side docks have no room for a horizontal slider, so the same control is
- * rotated. Transforms keep the layout box unchanged, which avoids the column
- * widening around it.
- */
-.ink-range-vertical {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 96px;
-  transform: translate(-50%, -50%) rotate(-90deg);
-}
-
-/*
  * Collapse / expand morph lives entirely in `animation.ts` (Motion variants).
  * Springs replace CSS keyframes here, and reduced motion is handled through
  * `MotionConfig reducedMotion="user"` plus explicit duration-0 gating.

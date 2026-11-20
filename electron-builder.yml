@@ -1,20 +1,26 @@
-appId: com.inkspace.app
-productName: InkSpace
+appId: com.openpen.anno
+productName: OpenPen Anno
 directories:
   buildResources: build
 files:
   - '!**/.vscode/*'
   - '!src/*'
+  - '!e2e/*'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!playwright.config.{js,ts,mjs,cjs}'
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
 asarUnpack:
   - resources/**
 win:
-  executableName: InkSpace
+  executableName: OpenPenAnno
   target:
     - nsis
+publish:
+  provider: github
+  owner: raghavdixit-2006
+  repo: OpenPen-Anno
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}

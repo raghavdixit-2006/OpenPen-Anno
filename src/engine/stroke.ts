@@ -17,6 +17,7 @@ let nextStrokeId = 0
 export function createStroke(points: readonly Point[], style: StrokeStyle = PEN_STYLE): Stroke {
   return {
     id: `stroke-${++nextStrokeId}`,
+    kind: 'freehand',
     points: points.map((point) => ({ ...point })),
     style: { ...style }
   }
