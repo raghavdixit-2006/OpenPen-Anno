@@ -8,7 +8,14 @@ import {
   sendToOverlay,
   syncOverlayBounds
 } from './overlayWindow'
-import { applyToolbarDock, createToolbarWindow } from './toolbarWindow'
+import {
+  applyToolbarDock,
+  createToolbarWindow,
+  getToolbarWindow,
+  refreshToolbarInteractivity,
+  setToolbarInteractive,
+  setToolbarRegions
+} from './toolbarWindow'
 import { registerShortcuts, setHistoryShortcutsEnabled, type ShortcutHandlers } from './shortcuts'
 import { flushSettings, loadSettings, saveToolbarSettings } from './settings'
 import { createTray, refreshTrayMenu } from './tray'
@@ -130,6 +137,21 @@ function registerIpc(): void {
   })
   ipcMain.on(IPC.closePopover, () => closePopover())
   ipcMain.handle(IPC.popoverContext, () => getPopoverContext())
+
+  ipcMain.on(IPC.setToolbarInteractive, (event, interactive: unknown) => {
+    const window = getToolbarWindow()
+    // Only the toolbar renderer may change its own window's mouse behaviour.
+    if (!window || window.isDestroyed() || event.sender !== window.webContents) return
+    if (typeof interactive !== 'boolean') return
+    setToolbarInteractive(interactive)
+  })
+
+  ipcMain.on(IPC.setToolbarRegions, (event, regions: unknown) => {
+    const window = getToolbarWindow()
+    // Same trust boundary as above: only the toolbar renderer reports its UI.
+    if (!window || window.isDestroyed() || event.sender !== window.webContents) return
+    setToolbarRegions(regions)
+  })
 }
 
 async function bootstrap(): Promise<void> {
@@ -205,6 +227,10 @@ async function bootstrap(): Promise<void> {
       applyOverlayMode(state.mode)
       // Drawing follows the cursor's display, so bring the dock along too.
       if (state.mode === 'draw') applyToolbarDock(state.dock, state.collapsed)
+      // The cursor may already rest on the mode button. Re-run the hit test now
+      // instead of waiting for a forwarded move that Windows may never deliver,
+      // otherwise draw mode can leave the toolbar click-through and unescapable.
+      refreshToolbarInteractivity()
     }
     if (state.dock !== appliedDock || state.collapsed !== appliedCollapsed) {
       appliedDock = state.dock

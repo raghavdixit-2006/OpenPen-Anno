@@ -101,6 +101,19 @@ export interface PopoverContext {
 /** Edge of the screen the toolbar dock is anchored to. */
 export type DockPosition = 'bottom' | 'top' | 'left' | 'right'
 
+/**
+ * A painted toolbar rectangle in the toolbar window's own CSS pixels (DIP).
+ * The renderer reports these so main can hit-test the OS cursor without
+ * depending on Chromium's forwarded mouse-move hook, which can drop events on
+ * Windows.
+ */
+export interface ToolbarRegion {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 /** Authoritative app state, owned by the main process and mirrored in the UI. */
 export interface OverlayState {
   mode: OverlayMode
@@ -145,6 +158,8 @@ export const IPC = {
   openPopover: 'openpen-anno:open-popover',
   closePopover: 'openpen-anno:close-popover',
   popoverContext: 'openpen-anno:popover-context',
+  setToolbarInteractive: 'openpen-anno:set-toolbar-interactive',
+  setToolbarRegions: 'openpen-anno:set-toolbar-regions',
   requestScreenshot: 'openpen-anno:request-screenshot',
   screenshotSave: 'openpen-anno:screenshot-save',
   // main -> both windows
@@ -188,6 +203,16 @@ export interface OpenPenAnnoApi {
     saveScreenshot: () => void
     openPopover: (request: PopoverRequest) => void
     closePopover: () => void
+    /**
+     * OS-level click-through for the transparent headroom around the rail.
+     * The renderer turns this on only while the pointer is over real UI.
+     */
+    setInteractive: (interactive: boolean) => void
+    /**
+     * Painted UI boxes (window CSS pixels) used by main's cursor hit-test
+     * fallback. Sent when the bar, Tool Menu or collapsed tab moves or mounts.
+     */
+    setRegions: (regions: ToolbarRegion[]) => void
   }
   popover: {
     getContext: () => Promise<PopoverContext | null>

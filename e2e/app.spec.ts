@@ -48,6 +48,9 @@ test('mode toggle is authoritative in main and reaches the overlay', async () =>
 })
 
 test('tool and eraser mode selections survive the IPC round trip', async () => {
+  // The menu opens on hover; pick Eraser from the grid, then its mode from the
+  // options panel that follows the selection.
+  await launched.toolbar.getByRole('button', { name: /open tool menu$/ }).hover()
   await launched.toolbar.getByRole('button', { name: 'Eraser', exact: true }).click()
   const popover = await pageByTitle(launched.app, 'OpenPen Anno Tool Options')
   await popover.getByRole('button', { name: 'Erase individual pixels' }).click()
@@ -62,13 +65,12 @@ test('tool and eraser mode selections survive the IPC round trip', async () => {
   await closePopovers(launched.app)
 })
 
-test('shape picker pops out and selects a shape tool', async () => {
-  await launched.toolbar.getByRole('button', { name: 'Shapes' }).click()
+test('shape tools are selected from the menu and open their picker', async () => {
+  await launched.toolbar.getByRole('button', { name: /open tool menu$/ }).hover()
+  await launched.toolbar.getByRole('button', { name: 'Rectangle', exact: true }).click()
   const popover = await pageByTitle(launched.app, 'OpenPen Anno Tool Options')
 
   await expect(popover.getByRole('button', { name: 'Rectangle' })).toBeVisible()
-  await popover.getByRole('button', { name: 'Rectangle' }).click()
-
   await expect.poll(async () => (await readState(launched.toolbar)).tool).toBe('rect')
   await closePopovers(launched.app)
 })
@@ -80,7 +82,7 @@ test('collapse shrinks the toolbar window and the tab restores it', async () => 
   // The tucked tab is mostly behind the screen edge; a direct DOM click avoids
   // Playwright's actionability check on a deliberately clipped element.
   await launched.toolbar.getByRole('button', { name: 'Expand toolbar' }).dispatchEvent('click')
-  await expect.poll(async () => (await toolbarBounds(launched.app))?.width).toBe(800)
+  await expect.poll(async () => (await toolbarBounds(launched.app))?.width).toBe(832)
 })
 
 test('freeze switches to drawing and unfreezes without leaving it', async () => {

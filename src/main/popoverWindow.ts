@@ -8,10 +8,10 @@ import { getToolbarRailBounds, getToolbarWindow, raiseToolbar } from './toolbarW
 
 /**
  * Floating tool options (colour, size, eraser mode, shape picker). The expanded
- * toolbar window includes transparent inward headroom for the dock
- * magnification and label pills, so panels are placed against the visible rail
- * (`getToolbarRailBounds()`), not the window edge. A small, separate topmost
- * window keeps that rail footprint untouched.
+ * toolbar window includes transparent inward headroom for the hover Tool Menu,
+ * so panels are placed against the visible rail (`getToolbarRailBounds()`), not
+ * the window edge. A small, separate topmost window keeps that rail footprint
+ * untouched.
  */
 const POPOVER_SIZE: Record<PopoverKind, { width: number; height: number }> = {
   tool: { width: 288, height: 104 },

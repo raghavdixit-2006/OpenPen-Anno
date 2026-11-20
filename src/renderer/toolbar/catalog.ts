@@ -57,6 +57,34 @@ export const SHAPE_TOOLS: Array<{ id: ShapeTool; label: string; Icon: IconCompon
   { id: 'ellipse', label: 'Ellipse', Icon: EllipseIcon }
 ]
 
+export interface ToolMenuItem {
+  id: ToolId
+  /** Full tool name for titles and assistive technology. */
+  label: string
+  /** Short label that fits the 107px menu cell. */
+  menuLabel: string
+  Icon: IconComponent
+}
+
+/**
+ * The ten tools in Tool Menu order. Laser and stamp use their short names in
+ * the grid so the cells never wrap; `label` keeps the full name for aria.
+ */
+export const TOOL_MENU: ToolMenuItem[] = [
+  ...TOOLS.map(({ id, label, Icon }) => ({
+    id,
+    label,
+    menuLabel: id === 'laser' ? 'Laser' : id === 'stamp' ? 'Stamp' : label,
+    Icon
+  })),
+  ...SHAPE_TOOLS.map(({ id, label, Icon }) => ({
+    id,
+    label,
+    menuLabel: label,
+    Icon
+  }))
+]
+
 export const ERASER_MODES: Array<{ id: EraserMode; label: string; title: string }> = [
   { id: 'stroke', label: 'Stroke', title: 'Erase whole strokes' },
   { id: 'pixel', label: 'Pixel', title: 'Erase individual pixels' }

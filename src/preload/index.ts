@@ -15,6 +15,7 @@ import {
   type TextCommit,
   type TextPopupContext,
   type TextPopupRequest,
+  type ToolbarRegion,
   type ToolId
 } from '../shared/ipc'
 
@@ -56,7 +57,10 @@ const api: OpenPenAnnoApi = {
     redo: () => ipcRenderer.send(IPC.history, 'redo'),
     saveScreenshot: () => ipcRenderer.send(IPC.requestScreenshot),
     openPopover: (request: PopoverRequest) => ipcRenderer.send(IPC.openPopover, request),
-    closePopover: () => ipcRenderer.send(IPC.closePopover)
+    closePopover: () => ipcRenderer.send(IPC.closePopover),
+    setInteractive: (interactive: boolean) =>
+      ipcRenderer.send(IPC.setToolbarInteractive, interactive),
+    setRegions: (regions: ToolbarRegion[]) => ipcRenderer.send(IPC.setToolbarRegions, regions)
   },
   popover: {
     getContext: () => ipcRenderer.invoke(IPC.popoverContext) as Promise<PopoverContext | null>,

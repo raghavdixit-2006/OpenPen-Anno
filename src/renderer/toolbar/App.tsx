@@ -1,31 +1,17 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type PointerEvent as ReactPointerEvent,
-  type ReactElement
-} from 'react'
-import {
-  AnimatePresence,
-  MotionConfig,
-  motion,
-  useMotionValue,
-  useReducedMotion,
-  useSpring
-} from 'motion/react'
+import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
+import { AnimatePresence, MotionConfig, motion, useReducedMotion } from 'motion/react'
 import { useToolbarStore } from './store'
 import { dockMorph } from './geometry'
 import {
   CONTROL_VARIANTS,
-  MAGNIFY_SPRING,
   chevronSpin,
   surfaceVariants,
   tabTuckVariants,
   tabVariants,
   tapProps
 } from './animation'
-import DockTile from './DockTile'
+import InlineOptions from './InlineOptions'
+import ToolMenu from './ToolMenu'
 import {
   BackdropIcon,
   ChevronIcon,
@@ -35,20 +21,12 @@ import {
   PointerIcon,
   RedoIcon,
   ScreenshotIcon,
-  ShapesIcon,
   TrashIcon,
   UndoIcon,
   type ChevronDirection
 } from './icons'
-import {
-  BACKDROP_LABELS,
-  DOCK_OPTIONS,
-  SHAPE_TOOLS,
-  TOOLS,
-  nextBackdrop,
-  optionsKindFor
-} from './catalog'
-import type { PopoverAnchor, PopoverKind, ToolId } from '../../shared/ipc'
+import { BACKDROP_LABELS, DOCK_OPTIONS, nextBackdrop, optionsKindFor } from './catalog'
+import type { PopoverAnchor, PopoverKind, ToolId, ToolbarRegion } from '../../shared/ipc'
 
 const ICON_BUTTON =
   'grid shrink-0 place-items-center rounded-lg text-zinc-400 transition-colors enabled:hover:bg-white/10 enabled:hover:text-zinc-100 disabled:cursor-default disabled:opacity-30'
@@ -96,6 +74,8 @@ function Divider({ vertical }: { vertical: boolean }): ReactElement {
 export default function App(): ReactElement {
   const mode = useToolbarStore((state) => state.mode)
   const tool = useToolbarStore((state) => state.tool)
+  const size = useToolbarStore((state) => state.size)
+  const eraserMode = useToolbarStore((state) => state.eraserMode)
   const backdrop = useToolbarStore((state) => state.backdrop)
   const frozen = useToolbarStore((state) => state.frozen)
   const dock = useToolbarStore((state) => state.dock)
@@ -104,6 +84,8 @@ export default function App(): ReactElement {
   const canRedo = useToolbarStore((state) => state.canRedo)
 
   const selectTool = useToolbarStore((state) => state.selectTool)
+  const changeSize = useToolbarStore((state) => state.changeSize)
+  const changeEraserMode = useToolbarStore((state) => state.changeEraserMode)
   const changeBackdrop = useToolbarStore((state) => state.changeBackdrop)
   const toggleFrozen = useToolbarStore((state) => state.toggleFrozen)
   const moveDock = useToolbarStore((state) => state.moveDock)
@@ -115,15 +97,84 @@ export default function App(): ReactElement {
   const saveScreenshot = useToolbarStore((state) => state.saveScreenshot)
 
   const reduce = useReducedMotion() === true
-  const activeShape = SHAPE_TOOLS.find((shape) => shape.id === tool)
-  const ShapeIcon = activeShape?.Icon ?? ShapesIcon
 
-  // One pointer position for the whole tools group. Motion values keep the
-  // magnification off React's render path; only enter/leave toggles the pill.
-  const pointerX = useMotionValue(-9999)
-  const pointerY = useMotionValue(-9999)
-  const smoothPointerX = useSpring(pointerX, MAGNIFY_SPRING)
-  const smoothPointerY = useSpring(pointerY, MAGNIFY_SPRING)
+  /**
+   * The toolbar window is click-through until the pointer is over real UI.
+   * Chromium forwards `mousemove` even while main ignores the mouse, which is
+   * the low-latency path for noticing the pointer entering the rail. Windows
+   * can drop those forwarded events, so main also polls the OS cursor against
+   * the regions reported below; this handler only needs to be fast, not
+   * bulletproof.
+   */
+  useEffect(() => {
+    let interactive = false
+    const onMouseMove = (event: MouseEvent): void => {
+      const target = event.target
+      const overUi = target instanceof Element && target.closest('[data-toolbar-ui]') !== null
+      if (overUi === interactive) return
+      interactive = overUi
+      window.api.toolbar.setInteractive(overUi)
+    }
+    // A dev reload can leave main's flag interactive; start click-through.
+    window.api.toolbar.setInteractive(false)
+    window.addEventListener('mousemove', onMouseMove)
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.api.toolbar.setInteractive(false)
+    }
+  }, [])
+
+  /**
+   * Report the painted UI boxes so main's cursor-poll fallback can hit-test
+   * them without depending on forwarded mouse events. Only the bar, the open
+   * Tool Menu and the collapsed tab are painted; the rest of the window is
+   * transparent headroom and must stay click-through for drawing.
+   *
+   * Reports are coalesced to one per frame and skipped when the integer
+   * geometry is unchanged. The observer catches mounts/unmounts and Motion's
+   * inline transforms (dock swap, collapse crossfade, tab pop); the resize
+   * listener catches main re-sizing the window for a new dock shape.
+   */
+  useEffect(() => {
+    let frame = 0
+    let last = ''
+    const report = (): void => {
+      frame = 0
+      const regions: ToolbarRegion[] = []
+      for (const element of document.querySelectorAll<HTMLElement>('[data-toolbar-ui]')) {
+        const rect = element.getBoundingClientRect()
+        if (rect.width <= 0 || rect.height <= 0) continue
+        regions.push({
+          x: Math.round(rect.left),
+          y: Math.round(rect.top),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height)
+        })
+      }
+      const serialized = JSON.stringify(regions)
+      if (serialized === last) return
+      last = serialized
+      window.api.toolbar.setRegions(regions)
+    }
+    const schedule = (): void => {
+      if (frame !== 0) return
+      frame = requestAnimationFrame(report)
+    }
+    const observer = new MutationObserver(schedule)
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'style']
+    })
+    window.addEventListener('resize', schedule)
+    report()
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', schedule)
+      if (frame !== 0) cancelAnimationFrame(frame)
+    }
+  }, [])
 
   /**
    * Collapse is optimistic: the bar folds first, and only when the fold has
@@ -160,24 +211,6 @@ export default function App(): ReactElement {
 
   const vertical = dock === 'left' || dock === 'right'
   const drawing = mode === 'draw'
-
-  // A layout change moves the group under the cursor; park the pointer far
-  // away so the new layout starts at rest until the next pointer move.
-  useEffect(() => {
-    pointerX.set(-9999)
-    pointerY.set(-9999)
-  }, [dock, uiCollapsed, pointerX, pointerY])
-
-  const trackToolPointer = (event: ReactPointerEvent<HTMLDivElement>): void => {
-    const rect = event.currentTarget.getBoundingClientRect()
-    pointerX.set(event.clientX - rect.left)
-    pointerY.set(event.clientY - rect.top)
-  }
-
-  const clearToolPointer = (): void => {
-    pointerX.set(-9999)
-    pointerY.set(-9999)
-  }
 
   // The chevrons point at the edge the bar is anchored to: collapsing tucks it
   // into that edge, expanding pulls it back out.
@@ -221,8 +254,7 @@ export default function App(): ReactElement {
   }
 
   // The rail hugs the docked edge inside the window. The inward side is
-  // transparent headroom for popped-out tiles and label pills, never part of
-  // the visible bar.
+  // transparent headroom for the hover Tool Menu, never part of the bar.
   const barAnchor =
     dock === 'bottom'
       ? 'bottom-2 left-2 right-2 h-11'
@@ -238,7 +270,9 @@ export default function App(): ReactElement {
 
   return (
     <MotionConfig reducedMotion="user">
-      <div className="relative h-full w-full overflow-visible">
+      {/* The window is larger than the rail: only painted controls should take
+          pointer input, the transparent headroom stays inert. */}
+      <div className="pointer-events-none relative h-full w-full overflow-visible">
         <AnimatePresence initial={false} onExitComplete={handleExitComplete}>
           {!uiCollapsed && (
             <motion.div key="bar" className={`absolute z-10 overflow-visible ${barAnchor}`}>
@@ -247,7 +281,8 @@ export default function App(): ReactElement {
                 initial="collapsed"
                 animate="expanded"
                 exit="collapsed"
-                className={`flex h-full w-full items-center overflow-visible bg-zinc-950/90 text-zinc-300 ring-1 ring-white/10 ${
+                data-toolbar-ui="bar"
+                className={`pointer-events-auto flex h-full w-full items-center overflow-visible bg-zinc-950/90 text-zinc-300 ring-1 ring-white/10 ${
                   vertical
                     ? 'flex-col justify-center gap-1 rounded-[20px] px-2 py-2'
                     : 'flex-row gap-1 rounded-[16px] px-2.5'
@@ -278,93 +313,62 @@ export default function App(): ReactElement {
                   </motion.span>
                 </motion.button>
 
-                <motion.div
+                {/* One trigger for all ten tools, with the menu opening inward. */}
+                <ToolMenu tool={tool} dock={dock} reduce={reduce} onSelect={chooseTool} />
+
+                {/* Backdrop is a display toggle, not a tool; one click cycles
+                    none → whiteboard → blackboard → spotlight. */}
+                <motion.button
+                  type="button"
                   variants={CONTROL_VARIANTS}
-                  onPointerMove={trackToolPointer}
-                  onPointerLeave={clearToolPointer}
-                  className={`flex shrink-0 items-center gap-1.5 overflow-visible rounded-xl bg-white/[0.06] p-1 ring-1 ring-white/10 ${
-                    vertical ? 'flex-col' : 'flex-row'
+                  {...tapProps}
+                  title={`Backdrop: ${BACKDROP_LABELS[backdrop]} — click to cycle`}
+                  aria-label={`Backdrop: ${BACKDROP_LABELS[backdrop]}, click to cycle`}
+                  aria-pressed={backdrop !== 'none'}
+                  onClick={() => changeBackdrop(nextBackdrop(backdrop))}
+                  className={`grid place-items-center rounded-2xl ring-1 transition-colors ${toolSize} ${
+                    backdrop !== 'none'
+                      ? 'bg-[#262333] text-white ring-white/20'
+                      : 'bg-[#1c1a24] text-zinc-400 ring-white/10 hover:bg-[#262333] hover:text-white hover:ring-white/20'
                   }`}
                 >
-                  {TOOLS.map(({ id, label, Icon }, index) => (
-                    <DockTile
-                      key={id}
-                      index={index}
-                      label={label}
-                      Icon={Icon}
-                      iconClassName={vertical ? 'h-4 w-4' : 'h-[18px] w-[18px]'}
-                      active={tool === id}
-                      pressed={tool === id}
-                      vertical={vertical}
-                      dock={dock}
-                      pointerX={smoothPointerX}
-                      pointerY={smoothPointerY}
-                      reduce={reduce}
-                      onSelect={(element) => chooseTool(id, element)}
-                    />
-                  ))}
-
-                  {/* One slot for all four shape tools: it pops out the shape
-                      picker plus the shared colour and size controls. */}
-                  <DockTile
-                    index={TOOLS.length}
-                    label="Shapes"
-                    Icon={ShapeIcon}
-                    iconClassName={vertical ? 'h-4 w-4' : 'h-[18px] w-[18px]'}
-                    active={activeShape !== undefined}
-                    hasPopup
-                    vertical={vertical}
-                    dock={dock}
-                    pointerX={smoothPointerX}
-                    pointerY={smoothPointerY}
-                    reduce={reduce}
-                    onSelect={(element) => openOptions('shapes', element)}
+                  <BackdropIcon
+                    mode={backdrop}
+                    className={vertical ? 'h-4 w-4' : 'h-[18px] w-[18px]'}
                   />
+                </motion.button>
 
-                  {/* Backdrop is a display toggle, not a tool; one click cycles
-                      none → whiteboard → blackboard → spotlight. */}
-                  <motion.button
-                    type="button"
-                    variants={CONTROL_VARIANTS}
-                    {...tapProps}
-                    title={`Backdrop: ${BACKDROP_LABELS[backdrop]} — click to cycle`}
-                    aria-label={`Backdrop: ${BACKDROP_LABELS[backdrop]}, click to cycle`}
-                    aria-pressed={backdrop !== 'none'}
-                    onClick={() => changeBackdrop(nextBackdrop(backdrop))}
-                    className={`grid place-items-center rounded-2xl ring-1 transition-colors ${toolSize} ${
-                      backdrop !== 'none'
-                        ? 'bg-[#262333] text-white ring-white/20'
-                        : 'bg-[#1c1a24] text-zinc-400 ring-white/10 hover:bg-[#262333] hover:text-white hover:ring-white/20'
-                    }`}
-                  >
-                    <BackdropIcon
-                      mode={backdrop}
-                      className={vertical ? 'h-4 w-4' : 'h-[18px] w-[18px]'}
-                    />
-                  </motion.button>
+                {/* Freeze-frame: pauses the screen under the ink and turns on
+                    wheel zoom plus middle/right-drag panning in the overlay. */}
+                <motion.button
+                  type="button"
+                  variants={CONTROL_VARIANTS}
+                  {...tapProps}
+                  title={
+                    frozen
+                      ? 'Frozen frame — click to resume (Ctrl+Shift+F)'
+                      : 'Freeze frame (Ctrl+Shift+F)'
+                  }
+                  aria-label={frozen ? 'Frozen frame, click to resume' : 'Freeze frame'}
+                  aria-pressed={frozen}
+                  onClick={toggleFrozen}
+                  className={`grid place-items-center rounded-2xl ring-1 transition-colors ${toolSize} ${
+                    frozen
+                      ? 'bg-sky-500/25 text-sky-200 ring-sky-300/20'
+                      : 'bg-[#1c1a24] text-zinc-400 ring-white/10 hover:bg-[#262333] hover:text-white hover:ring-white/20'
+                  }`}
+                >
+                  <FreezeIcon className={vertical ? 'h-4 w-4' : 'h-[18px] w-[18px]'} />
+                </motion.button>
 
-                  {/* Freeze-frame: pauses the screen under the ink and turns on
-                      wheel zoom plus middle/right-drag panning in the overlay. */}
-                  <motion.button
-                    type="button"
-                    variants={CONTROL_VARIANTS}
-                    {...tapProps}
-                    title={
-                      frozen
-                        ? 'Frozen frame — click to resume (Ctrl+Shift+F)'
-                        : 'Freeze frame (Ctrl+Shift+F)'
-                    }
-                    aria-label={frozen ? 'Frozen frame, click to resume' : 'Freeze frame'}
-                    aria-pressed={frozen}
-                    onClick={toggleFrozen}
-                    className={`grid place-items-center rounded-2xl ring-1 transition-colors ${toolSize} ${
-                      frozen
-                        ? 'bg-sky-500/25 text-sky-200 ring-sky-300/20'
-                        : 'bg-[#1c1a24] text-zinc-400 ring-white/10 hover:bg-[#262333] hover:text-white hover:ring-white/20'
-                    }`}
-                  >
-                    <FreezeIcon className={vertical ? 'h-4 w-4' : 'h-[18px] w-[18px]'} />
-                  </motion.button>
+                <motion.div variants={CONTROL_VARIANTS} className="flex shrink-0">
+                  <InlineOptions
+                    vertical={vertical}
+                    size={size}
+                    eraserMode={eraserMode}
+                    onChangeSize={changeSize}
+                    onChangeEraserMode={changeEraserMode}
+                  />
                 </motion.div>
 
                 <Divider vertical={vertical} />
@@ -498,7 +502,7 @@ export default function App(): ReactElement {
               initial="hidden"
               animate="visible"
               exit="hidden"
-              className={`absolute ${tabZ} ${tabAnchor} h-12 w-12`}
+              className={`pointer-events-none absolute ${tabZ} ${tabAnchor} h-12 w-12`}
             >
               {/* The rounded-square glass tab lives mostly behind the screen
                   edge (only its 12px sliver is visible) and pops out flush on
@@ -512,10 +516,11 @@ export default function App(): ReactElement {
                 exit="tucked"
                 whileHover="popped"
                 onClick={requestExpand}
+                data-toolbar-ui="tab"
                 title={drawing ? 'Drawing — expand toolbar' : 'Pass-through — expand toolbar'}
                 aria-label="Expand toolbar"
                 aria-expanded={false}
-                className="grid h-12 w-12 cursor-pointer place-items-center rounded-[10px] bg-white/70 ring-1 ring-white/60 shadow-[0_6px_18px_rgba(0,0,0,0.28)] backdrop-blur-md"
+                className="pointer-events-auto grid h-12 w-12 cursor-pointer place-items-center rounded-[10px] bg-white/70 ring-1 ring-white/60 shadow-[0_6px_18px_rgba(0,0,0,0.28)] backdrop-blur-md"
               >
                 <motion.span
                   {...chevronSpin('out', reduce)}

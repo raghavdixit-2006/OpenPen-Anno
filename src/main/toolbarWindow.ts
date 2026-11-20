@@ -1,7 +1,7 @@
-import { BrowserWindow, type Rectangle } from 'electron'
+import { BrowserWindow, screen, type Point, type Rectangle } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
-import type { DockPosition } from '../shared/ipc'
+import type { DockPosition, ToolbarRegion } from '../shared/ipc'
 import { activeDisplay } from './display'
 import { guardNavigation } from './navigation'
 import { getState, patchState } from './state'
@@ -12,13 +12,13 @@ const DOCK_INSET = 8
 /**
  * Horizontal docks (bottom/top) are wide and short; side docks (left/right) are
  * an ultra-thin single column. The long axis is the visible rail. The extra
- * cross-axis size is inward-facing transparent headroom for the dock
- * magnification and label pills; it is not part of the bar.
+ * cross-axis size is inward-facing transparent headroom for the hover Tool
+ * Menu; it is not part of the bar.
  */
 const DOCK_SIZE = {
-  horizontal: { width: 800, height: 124 },
-  // 56px single-column rail + 144px inward headroom for popped tiles/labels.
-  vertical: { width: 208, height: 680 }
+  horizontal: { width: 832, height: 290 },
+  // 56px single-column rail + 272px inward headroom for the 236px Tool Menu.
+  vertical: { width: 328, height: 580 }
 } as const
 
 /** The visible rail surface inside the expanded window. */
@@ -42,16 +42,143 @@ const BAR_SIZE = {
  */
 const COLLAPSED_SIZE = { width: 64, height: 64 } as const
 
+/**
+ * How often main re-checks the OS cursor against the toolbar's painted
+ * regions. Chromium's forwarded mouse-move hook is the low-latency path, but
+ * Windows can drop those events (or suspend the hook) while an elevated window
+ * has focus; the poll is the safety net that guarantees the clicks come back.
+ */
+const REGION_POLL_MS = 40
+
+/** Defensive cap: the toolbar has a bar, a menu and a collapsed tab. */
+const MAX_TOOLBAR_REGIONS = 8
+
 let toolbar: BrowserWindow | null = null
+let toolbarInteractive = false
+/** Painted UI boxes in window CSS pixels, as reported by the renderer. */
+let toolbarRegions: ToolbarRegion[] = []
+let interactivePoll: ReturnType<typeof setInterval> | null = null
 
 export function getToolbarWindow(): BrowserWindow | null {
   return toolbar
 }
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+function pointInside(point: Point, rect: Rectangle): boolean {
+  return (
+    point.x >= rect.x &&
+    point.x < rect.x + rect.width &&
+    point.y >= rect.y &&
+    point.y < rect.y + rect.height
+  )
+}
+
+/**
+ * Accepts the renderer's region report. Everything is validated here because
+ * this is renderer data crossing the IPC boundary: a malformed rect must not
+ * turn the transparent headroom clickable by accident.
+ */
+export function setToolbarRegions(regions: unknown): void {
+  if (!Array.isArray(regions) || regions.length > MAX_TOOLBAR_REGIONS) return
+
+  const next: ToolbarRegion[] = []
+  for (const region of regions) {
+    if (typeof region !== 'object' || region === null) return
+    const { x, y, width, height } = region as Record<string, unknown>
+    if (!isFiniteNumber(x) || !isFiniteNumber(y)) return
+    if (!isFiniteNumber(width) || !isFiniteNumber(height)) return
+    if (width <= 0 || height <= 0 || width > 10_000 || height > 10_000) return
+    if (Math.abs(x) > 10_000 || Math.abs(y) > 10_000) return
+    next.push({ x, y, width, height })
+  }
+
+  toolbarRegions = next
+  refreshToolbarInteractivity()
+}
+
+/**
+ * Main-process hit test. Called on a timer and whenever z-order or mode
+ * changes, so the toolbar stops being click-through even when no forwarded
+ * `mousemove` ever arrives.
+ *
+ * Regions are window-relative CSS pixels, which match DIP, so the window
+ * origin can be added directly to compare against `getCursorScreenPoint()`.
+ * The visible rail is computed from the window geometry and is always counted,
+ * so a stale or missing renderer report can never make the bar click-through.
+ * Reported regions then add the hover Tool Menu. A collapsed window is
+ * treated as one whole tab.
+ */
+export function refreshToolbarInteractivity(): boolean {
+  if (!toolbar || toolbar.isDestroyed()) return false
+
+  const cursor = screen.getCursorScreenPoint()
+  const bounds = toolbar.getBounds()
+  const { collapsed } = getState()
+
+  let interactive: boolean
+  if (collapsed) {
+    // The collapsed window is almost entirely the tab; treating the whole
+    // window as UI is both correct and immune to stale pre-collapse regions.
+    interactive = pointInside(cursor, bounds)
+  } else {
+    const rail = getToolbarRailBounds()
+    interactive =
+      (rail !== null && pointInside(cursor, rail)) ||
+      toolbarRegions.some((region) =>
+        pointInside(cursor, {
+          x: bounds.x + region.x,
+          y: bounds.y + region.y,
+          width: region.width,
+          height: region.height
+        })
+      )
+  }
+
+  setToolbarInteractive(interactive)
+  return interactive
+}
+
+function startInteractivePoll(): void {
+  stopInteractivePoll()
+  interactivePoll = setInterval(refreshToolbarInteractivity, REGION_POLL_MS)
+  // The window already keeps the app alive; the timer never should.
+  interactivePoll.unref()
+}
+
+function stopInteractivePoll(): void {
+  if (interactivePoll === null) return
+  clearInterval(interactivePoll)
+  interactivePoll = null
+}
+
+/**
+ * OS-level click-through for the expanded window's transparent headroom.
+ *
+ * CSS `pointer-events` only decides DOM hit-testing; the BrowserWindow itself
+ * still swallows every click inside its rectangle. The renderer reports when
+ * the pointer is over real UI (bar, menu, collapsed tab), and this toggles
+ * `setIgnoreMouseEvents` so strokes started in the headroom reach the overlay
+ * or the app underneath.
+ *
+ * `forward: true` supplies the low-latency path: move events keep arriving
+ * while the window ignores the mouse. It is not the only path, because Windows
+ * can drop those forwarded events; `refreshToolbarInteractivity()` re-checks
+ * the OS cursor on a timer and restores clicks regardless.
+ */
+export function setToolbarInteractive(interactive: boolean): void {
+  if (interactive === toolbarInteractive) return
+  toolbarInteractive = interactive
+  if (!toolbar || toolbar.isDestroyed()) return
+  toolbar.setIgnoreMouseEvents(!interactive, { forward: true })
+}
+
 /**
  * Visible rail rectangle in screen coordinates. Expanded windows have
- * transparent inward headroom for popped-out tiles and label pills, so menus
- * must be positioned against the bar surface rather than the window edge.
+ * transparent inward headroom for the hover Tool Menu, so panels must be
+ * positioned against the bar surface rather than the window edge.
  */
 export function getToolbarRailBounds(): Rectangle | null {
   if (!toolbar || toolbar.isDestroyed()) return null
@@ -84,9 +211,14 @@ export function getToolbarRailBounds(): Rectangle | null {
  * Both windows are topmost at the `screen-saver` level, so whichever was
  * raised last wins. The overlay must stay below the toolbar or it would
  * swallow clicks on the controls while drawing.
+ *
+ * Interactivity is refreshed in the same step: a mode flip, dock change or
+ * display change that raised the toolbar must also re-enable its clicks if the
+ * cursor is already on the rail, even when Chromium never forwards a move.
  */
 export function raiseToolbar(): void {
   if (toolbar && !toolbar.isDestroyed()) toolbar.moveTop()
+  refreshToolbarInteractivity()
 }
 
 /** Centres the dock (or the collapsed glassy handle) flush on the requested edge of the work area. */
@@ -122,7 +254,19 @@ function dockBounds(dock: DockPosition, collapsed: boolean): Rectangle {
  */
 export function applyToolbarDock(dock: DockPosition, collapsed: boolean): void {
   if (!toolbar || toolbar.isDestroyed()) return
-  toolbar.setBounds(dockBounds(dock, collapsed))
+  const target = dockBounds(dock, collapsed)
+  const current = toolbar.getBounds()
+  // Identical bounds are common (draw-mode entry re-applies the same dock).
+  // Every extra `setBounds` makes DWM re-present a transparent topmost window,
+  // so only touch the window when it actually needs to move or resize.
+  if (
+    current.x !== target.x ||
+    current.y !== target.y ||
+    current.width !== target.width ||
+    current.height !== target.height
+  ) {
+    toolbar.setBounds(target)
+  }
   raiseToolbar()
 }
 
@@ -182,9 +326,9 @@ function loadToolbar(window: BrowserWindow): void {
 }
 
 /**
- * The toolbar is its own always-on-top window. Because it never sets
- * ignoreMouseEvents, it stays clickable while the overlay is in passthrough;
- * the overlay ignores the pointer and the click lands on this window instead.
+ * The toolbar is its own always-on-top window. It starts click-through so the
+ * transparent headroom never blocks drawing; `setToolbarInteractive` turns the
+ * mouse back on while the pointer is over the rail, menu or collapsed tab.
  */
 export function createToolbarWindow(): BrowserWindow {
   const { dock, collapsed } = getState()
@@ -222,6 +366,15 @@ export function createToolbarWindow(): BrowserWindow {
   toolbar.setAlwaysOnTop(true, 'screen-saver')
   toolbar.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
 
+  // Start transparent to the mouse: the window is much larger than the rail,
+  // and the unused area must not swallow strokes. The renderer flips this on
+  // as soon as the pointer crosses real UI, and the cursor poll below catches
+  // the case where forwarded move events never arrive.
+  toolbarInteractive = false
+  toolbarRegions = []
+  toolbar.setIgnoreMouseEvents(true, { forward: true })
+  startInteractivePoll()
+
   // The handle regions drag the window natively (no JS, no IPC, no bounds
   // writes during the gesture). `moved` fires once when that native move loop
   // ends — the moment to re-dock, in a single bounds change.
@@ -237,6 +390,9 @@ export function createToolbarWindow(): BrowserWindow {
   })
 
   toolbar.on('closed', () => {
+    stopInteractivePoll()
+    toolbarRegions = []
+    toolbarInteractive = false
     toolbar = null
   })
 

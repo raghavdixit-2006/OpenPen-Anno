@@ -20,56 +20,15 @@ export const tapProps = {
   transition: TAP_SPRING
 } as const
 
-/** Pointer-follow spring for the dock-style proximity magnification. */
-export const MAGNIFY_SPRING = { stiffness: 420, damping: 30, mass: 0.5 } as const
-
-/** Tool tiles get press feedback only; their hover scale is the dock bell. */
-export const tileTapProps = {
-  whileTap: { scale: 0.94 },
-  transition: TAP_SPRING
-} as const
-
-const MAGNIFY_SPAN_STEPS = 3
-const MAGNIFY_SCALE = 0.18
-const MAGNIFY_POP = 8
-
-/** Smooth 1 → 0 falloff over three tile centres. */
-function magnificationInfluence(distance: number, step: number): number {
-  return Math.max(0, 1 - distance / (step * MAGNIFY_SPAN_STEPS))
-}
+const INSTANT = { duration: 0 }
 
 /**
- * 1.18x at the pointer, ~1.08x next door, ~1.02x two tiles away, and 1x beyond.
- * The gentler bell keeps magnified neighbours clear of each other inside the
- * 6px tile gap. Motion values feed this per tile, so pointer movement never
- * re-renders React.
+ * Hover Tool Menu. It grows out of the trigger on the inward side of the rail:
+ * scale 0.92 → 1, fade, and a 4px slide from the trigger. Reduced motion keeps
+ * the fade only.
  */
-export function magnificationScale(distance: number, step: number): number {
-  const influence = magnificationInfluence(distance, step)
-  return 1 + MAGNIFY_SCALE * influence * influence
-}
-
-/** Cross-axis lift away from the docked edge: 8px at the pointer, fading out. */
-export function magnificationPop(distance: number, step: number): number {
-  return MAGNIFY_POP * Math.pow(magnificationInfluence(distance, step), 0.75)
-}
-
-/**
- * Distance from the tile's rest edge to the pill's near edge: half the hovered
- * growth, plus the pop-out, plus an 8px gap. Reduced motion pins the tile at
- * rest, so only the gap remains.
- */
-export function labelPillOffset(tileSize: number, reduceMotion: boolean): number {
-  return reduceMotion ? 8 : (tileSize * MAGNIFY_SCALE) / 2 + MAGNIFY_POP + 8
-}
-
-/**
- * Floating tool label. CSS positions it on the inward side of the tile; this
- * only animates it in/out. Reduced motion keeps the fade and still shows the
- * static pill on hover.
- */
-export function labelPillVariants(dock: DockPosition, reduceMotion: boolean): Variants {
-  const towardTile =
+export function toolMenuVariants(dock: DockPosition, reduceMotion: boolean): Variants {
+  const towardTrigger =
     dock === 'bottom'
       ? { y: 4 }
       : dock === 'top'
@@ -79,28 +38,26 @@ export function labelPillVariants(dock: DockPosition, reduceMotion: boolean): Va
           : { x: 4 }
 
   return {
-    initial: reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.92, ...towardTile },
-    animate: {
+    hidden: reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.92, ...towardTrigger },
+    visible: {
       opacity: 1,
       scale: 1,
       x: 0,
       y: 0,
       transition: reduceMotion
         ? { duration: 0.1, ease: 'easeOut' }
-        : { type: 'spring', stiffness: 520, damping: 30 }
+        : { type: 'spring', stiffness: 520, damping: 32 }
     },
     exit: reduceMotion
       ? { opacity: 0, transition: { duration: 0.1, ease: 'easeIn' } }
       : {
           opacity: 0,
           scale: 0.92,
-          ...towardTile,
+          ...towardTrigger,
           transition: { duration: 0.12, ease: 'easeIn' }
         }
   }
 }
-
-const INSTANT = { duration: 0 }
 
 /**
  * Individual controls. On expand they stagger into view (orchestrated by the

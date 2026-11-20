@@ -6,24 +6,24 @@ import type { DockPosition } from '../../shared/ipc'
  * renderer can fold the visible bar into the exact spot the collapsed tab's
  * visible sliver occupies. Keep both files in sync.
  *
- * The cross-axis headroom is transparent window space for the dock
- * magnification and label pills. The visible bar surface stays exactly the
- * same size; only the window around it grew on the inward-facing side.
+ * The cross-axis headroom is transparent window space for the hover Tool
+ * Menu. The visible bar surface stays exactly the same size; only the window
+ * around it grew on the inward-facing side.
  */
 export const EXPANDED_WINDOW = {
-  horizontal: { width: 800, height: 124 },
-  // A 56px single-column rail plus 144px of inward transparent headroom for
-  // popped-out tiles and label pills.
-  vertical: { width: 208, height: 680 }
+  horizontal: { width: 832, height: 290 },
+  // A 56px single-column rail plus 272px of inward transparent headroom for
+  // the 236px-wide Tool Menu.
+  vertical: { width: 328, height: 580 }
 } as const
 
 /** Padding between the window edge and the visible bar surface (`p-2`). */
 export const EXPANDED_INSET = 8
 
 /**
- * Visible rail surface. Horizontal docks keep the 784×44 bar; side docks are an
- * ultra-thin 56×664 strip. The rest of the vertical window is inward-facing
- * headroom.
+ * Visible rail surface. Horizontal docks keep the 816×44 bar; side docks are an
+ * ultra-thin 56×564 strip. The rest of the vertical window is inward-facing
+ * headroom for the Tool Menu.
  */
 export const BAR_SIZE = {
   horizontal: {
@@ -35,29 +35,6 @@ export const BAR_SIZE = {
     height: EXPANDED_WINDOW.vertical.height - EXPANDED_INSET * 2
   }
 } as const
-
-const TILE_SIZE = 32
-const TILE_GAP = 6
-
-/**
- * Tool tiles inside the tools group: one 32px row in horizontal docks and one
- * 32px column in side docks. The group has `p-1` and `gap-1.5`; keep these in
- * sync with App.tsx and DockTile.tsx.
- */
-export const TOOL_TILE = {
-  size: TILE_SIZE,
-  gap: TILE_GAP,
-  padding: 4,
-  step: TILE_SIZE + TILE_GAP
-} as const
-
-/** Centre of a tool tile in the tools-group's local coordinates. */
-export function tileCentre(index: number, vertical: boolean): { x: number; y: number } {
-  const offset = TOOL_TILE.padding + TOOL_TILE.size / 2
-  return vertical
-    ? { x: offset, y: offset + index * TOOL_TILE.step }
-    : { x: offset + index * TOOL_TILE.step, y: offset }
-}
 
 /**
  * Uniform collapsed window: the 48px tab (plus shadow room) centred in a

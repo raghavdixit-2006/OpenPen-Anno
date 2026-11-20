@@ -1,7 +1,7 @@
 # OpenPen Anno — project context
 
 Living notes for anyone (human or agent) picking this project up. Last updated
-2026-11-20, after the ultra-thin single-column dock and high-headroom labels.
+2026-11-20, after the hover Tool Menu replaced the multi-icon dock rail.
 
 ---
 
@@ -125,9 +125,9 @@ Two separate BrowserWindows:
   `fullscreen: true` (fullscreen kills DWM transparency on Windows).
   `focusable: false` (see §7).
 - **Toolbar** — separate always-on-top window, `transparent`, frameless,
-  docked to a screen edge (800×124 DIP horizontal, 208×680 DIP vertical; the
-  extra cross-axis room is inward-facing transparent headroom for hover
-  labels).
+  docked to a screen edge (832×290 DIP horizontal, 328×580 DIP vertical; the
+  extra cross-axis room is inward-facing transparent headroom for the hover
+  Tool Menu).
   Window flags: `resizable: false`, `thickFrame: false`, `hasShadow: false`,
   `backgroundColor: '#00000000'`. Dragging is native OS dragging
   (`-webkit-app-region: drag` on handle regions only); the main process never
@@ -293,12 +293,18 @@ the toolbar, which then swallows toolbar clicks. Mitigations:
 
 - Overlay is `focusable: false` so drawing never activates it.
 - `raiseToolbar()` is called after the overlay is shown, re-bounded, or has its
-  mode changed (`overlayWindow.ts` → `toolbarWindow.ts`).
+  mode changed (`overlayWindow.ts` → `toolbarWindow.ts`). It also re-runs the
+  toolbar's cursor hit test, so a mode flip that happens with the pointer
+  already on the mode button cannot leave the rail click-through.
 - Regression signature: toolbar stops responding after the first stroke.
 
 **Bounds.** On Windows a frameless, non-resizable window created at full display
 height can be silently clamped to the work area (48 px short at 1080p). Re-apply
-the active display's bounds in `ready-to-show` (`syncOverlayBounds()`).
+the active display's bounds in `ready-to-show` (`syncOverlayBounds(true)`).
+Elsewhere `syncOverlayBounds()` is a no-op unless the bounds or scale factor
+actually changed: resizing a display-sized transparent topmost window makes DWM
+rebuild its composition surface, which can flash black over GPU-composited
+windows beneath it.
 
 **DPI.** Test machine is 1920×1080 at 125% (120 DPI). Electron reports DIP
 (1536×864). Any external screen-capture or click automation must call
@@ -306,10 +312,67 @@ the active display's bounds in `ready-to-show` (`syncOverlayBounds()`).
 screenshots silently show the wrong region. This caused a false "toolbar is
 invisible" investigation — the toolbar was fine.
 
-**Mouse behaviour.** Draw mode: `setIgnoreMouseEvents(false)`.
-Passthrough: `setIgnoreMouseEvents(true, { forward: true })`. Draw mode must
-**not** `focus()` the overlay: it receives mouse input while inactive, and
-leaving keyboard focus in the underlying app is intentional.
+**Mouse behaviour.** Draw mode: `setIgnoreMouseEvents(false)`. Passthrough:
+`setIgnoreMouseEvents(true, { forward: true })`. Draw mode must **not**
+`focus()` the overlay: it receives mouse input while inactive, and leaving
+keyboard focus in the underlying app is intentional. Electron strips
+`WS_EX_TRANSPARENT` **and** `WS_EX_LAYERED` when clicks are enabled, which is
+why the window is marked layered at creation (see the black-viewport note).
+
+**Toolbar click-through.** The toolbar window is larger than the rail (menu
+headroom), so it also starts `setIgnoreMouseEvents(true, { forward: true })`.
+Two paths flip it back:
+
+1. **Fast path:** the toolbar renderer watches the forwarded `mousemove` stream
+   and sends `setToolbarInteractive` whenever the pointer enters or leaves a
+   `[data-toolbar-ui]` element (rail surface, Tool Menu card, collapsed tab).
+2. **Safety net:** the renderer also reports each `[data-toolbar-ui]` rect via
+   `setToolbarRegions`, and main polls `screen.getCursorScreenPoint()` every
+   40 ms (`refreshToolbarInteractivity()`), comparing the OS cursor against
+   the window origin + those regions. The visible rail rect
+   (`getToolbarRailBounds()`) is always counted too, so a stale renderer report
+   can never make the bar click-through; reported regions add the Tool Menu.
+   Collapsed windows are treated as one whole tab.
+
+Windows can drop or suspend the forwarded `mousemove` hook (e.g. while an
+elevated window has focus), so the fast path alone can deadlock the toolbar in
+click-through state; the poll guarantees the rail, open Tool Menu and collapsed
+tab always become clickable again, including immediately after a mode change.
+Main flips `setIgnoreMouseEvents` accordingly, so a stroke started in the
+transparent headroom reaches the overlay (or the app underneath in
+passthrough) while the rail itself stays clickable. Both handlers only accept
+messages from the toolbar's own `webContents`.
+
+**Overlay transparency / DWM.** The overlay is `transparent` +
+`backgroundColor: '#00000000'`, frameless, without `fullscreen` or
+`thickFrame`, and it calls `setOpacity(0.99)` at creation. Do not set the
+opacity back to 1. Bounds are only re-applied on startup and real display
+moves (`syncOverlayBounds()` skips unchanged rectangles), and
+`webContents.invalidate()` must never be called: resizing a display-sized
+transparent topmost window makes DWM rebuild its composition surface. The
+backdrop stays `none` and the freeze canvas is only painted while `frozen`, so
+renderer state is never a black source.
+
+**Black viewport under a draw-mode overlay (root cause).** Chromium's Windows
+occlusion tracker only ignores a topmost window above it if that window has
+`WS_EX_TRANSPARENT`, `WS_EX_TOOLWINDOW`, or `WS_EX_LAYERED` with alpha < 255
+(`gfx::IsWindowVisibleAndFullyOpaque`). Draw mode calls
+`setIgnoreMouseEvents(false)`, and Electron removes **both**
+`WS_EX_TRANSPARENT` and `WS_EX_LAYERED` when clicks are enabled. The
+full-screen overlay then looks like an opaque cover, so Chromium apps
+underneath stop painting: OpenCode/Chrome preview panes and video show black
+while their tab strips and the desktop stay visible. Returning to passthrough
+restores them because `WS_EX_TRANSPARENT` is set again.
+
+The fix is `overlay.setOpacity(0.99)` once, before the first
+`applyOverlayMode()`. Electron's `SetOpacity` calls `SetLayered()` +
+`SetLayeredWindowAttributes(alpha = 252)` and latches its internal `layered_`
+flag, so every later `setIgnoreMouseEvents(false)` re-adds `WS_EX_LAYERED`
+instead of stripping it. Chromium then skips the overlay during occlusion
+checks and keeps the app beneath rendering; the 1% window alpha is
+imperceptible. A 64×64 or rail-sized toolbar does not need this: it never
+covers an entire underlying window, so it cannot trigger a full-occlusion
+false positive.
 
 **Layered windows.** `WindowFromPoint` is unreliable on layered/transparent
 windows; verify click-through behaviourally instead.
@@ -336,17 +399,17 @@ same conditional pattern.
 ## 9. UI details (toolbar)
 
 - Two window shapes in `toolbarWindow.ts` (`DOCK_SIZE`): horizontal docks are
-  800×124 DIP, side docks are 208×680 DIP. The visible rail is 784×44 / 56×664
+  832×290 DIP, side docks are 328×580 DIP. The visible rail is 816×44 / 56×564
   (8px inset); the extra cross-axis room is inward-facing transparent headroom
-  for the dock magnification and label pills. Both windows are flush to their
+  for the 236×200 hover Tool Menu. Both windows are flush to their
   work-area edge (margin 0) and centred on the long axis, and re-bounded through
   `applyToolbarDock()` whenever `state.dock` / `state.collapsed` changes or the
   display layout changes. The collapsed window (`COLLAPSED_SIZE`) is a uniform
   64×64 DIP box for all four docks — the popped tab fits with shadow room.
   `getToolbarRailBounds()` exposes the visible rail so the options popover is
   positioned against the bar, not the enlarged window. The side rail is a
-  single 56px column; its 664px height is the cost of stacking nine 32px tools
-  plus the utility, mode and dock groups linearly.
+  single 56px column; its 564px height fits the stacked trigger, toggles,
+  inline options, utility, mode and dock groups.
 - Collapsing swaps the bar for a **rounded-square glass tab** (48px,
   `rounded-[10px]`, white/70, hairline `ring-white/60`, backdrop blur, soft
   shadow) that lives mostly behind the screen edge. Tucked, it sits
@@ -390,20 +453,38 @@ reducedMotion="user"` plus explicit duration-0 gating makes reduced motion
   buttons get `tapProps` (whileHover 1.08 / whileTap 0.9 spring); colour swatches
   use a stronger hover. Raw CSS `transition` is replaced with `transition-colors`
   on motion-animated buttons so Motion's transforms don't double-ease.
-- Tool buttons (the six tools plus Shapes) are 32px dark squircle tiles in
-  `DockTile.tsx`. Horizontal docks lay them in one row; side docks stack them
-  in one 56px column (no cross-axis term — the bell follows the single axis).
-  A `useMotionValue` / `useSpring` pointer position feeds each tile's
-  `useTransform` bell: hovered ~1.18×, adjacent ~1.08×, second ~1.02×,
-  otherwise 1×, with a 6px tile gap keeping magnified neighbours clear. The
-  same bell lifts tiles 8px away from the docked edge (bottom = up, top = down,
-  left = right, right = left). The hovered tile shows a floating
-  `bg-zinc-950/95` label pill with an 8px gap on the inward side; horizontal
-  pills get a tiny dock-aware arrow (down for bottom docks, up for top docks),
-  and the pill is pointer-events-none and animates through `AnimatePresence`.
-  `MotionConfig reducedMotion="user"` plus explicit `reduce` gates pin the
-  scale/lift at rest while the static pill still appears. Backdrop and freeze
-  share the tile surface but keep their plain toggle interaction.
+- The ten tools live behind one **Active Tool trigger** (`ToolMenu.tsx`): a
+  40×40 rounded-square button showing the current tool icon and a subtle corner
+  dot. Hovering or focusing the trigger opens the Tool Menu after no delay;
+  trigger and menu share one hover container and the menu carries an invisible
+  12px `before:` bridge, so crossing the gap does not close it. Leaving the
+  subtree starts a 150ms close timer; selecting a tool or pressing Escape
+  closes immediately. The menu opens **inward** — above a bottom dock, below a
+  top dock, right of a left dock, left of a right dock — as a 236×200 dark
+  glass card (`zinc-950/95`, `backdrop-blur-md`, hairline ring, `rounded-2xl`)
+  holding all ten tools in a 2-column grid with icon + short label (Laser and
+  Stamp use short names; full names stay in `aria-label`). The active item is
+  `bg-white/15 text-white ring-1 ring-white/20`. Entry is scale 0.92→1, fade,
+  and a 4px directional slide driven by `AnimatePresence` +
+  `toolMenuVariants`; `MotionConfig reducedMotion="user"` keeps the fade only.
+  The menu state is local to the component; only a selection reaches the store
+  (and then the options popover via `chooseTool()`).
+- The rail is a single line in both orientations: grip, collapse chevron,
+  Active Tool trigger, backdrop cycle, freeze-frame toggle, **inline eraser
+  mode + brush size**, undo / redo / screenshot / clear, draw/passthrough pill
+  (icon-only in side docks), and four dock-position buttons. Inline options
+  are a segmented Stroke/Pixel control plus a 1–32 slider in horizontal docks,
+  and a stacked segmented control plus `+`/`−` stepper in the 56px side rail.
+  Backdrop and freeze keep the 32px tile surface with plain toggle interaction.
+- The renderer root is `pointer-events-none`; only the bar surface, the Tool
+  Menu and the collapsed tab are `pointer-events-auto`, so the transparent
+  headroom does not take DOM input. That alone cannot make the BrowserWindow
+  click-through, so the same UI elements carry `data-toolbar-ui`. The renderer
+  reports their rects (`window.api.toolbar.setRegions`) and fast-paths
+  `mousemove` through `setToolbarInteractive`; main also polls the OS cursor
+  against the reported regions and flips `setIgnoreMouseEvents` accordingly
+  (see §7). Drawing or erasing can therefore start in the transparent area
+  around the rail without ever stranding the toolbar in click-through state.
 - The toolbar window is dragged **natively by the OS**: `.app-drag`
   (`-webkit-app-region: drag` + grab cursor) is applied only to the expanded
   bar's grip (enlarged 44×32/32×44 hit area). The collapsed tab is not a
@@ -429,14 +510,14 @@ reducedMotion="user"` plus explicit duration-0 gating makes reduced motion
   the same groups into a single 56px column (tools, utility, mode and dock
   chooser are each `flex flex-col`), so both orientations share one component
   tree. Vertical tiles are 32×32, not stretched to the rail width.
-- Controls: grip, pen / highlighter / eraser / text / laser / stamp, a shape
-  picker (arrow, line, rect, ellipse), backdrop cycle (none / whiteboard /
-  blackboard / spotlight), freeze-frame toggle, 8-colour palette, brush size
-  slider (1–32 UI, main clamps 1–64; rotated 90° in side docks), undo, redo,
-  save annotated screenshot, clear, draw/passthrough pill (icon-only in side
-  docks), and four dock-position buttons drawn as a screen with a bar on the
-  target edge. The palette slot swaps for eraser modes or the shape menu based
-  on the active tool.
+- Controls: grip, collapse chevron, Active Tool trigger (all ten tools in the
+  hover menu), backdrop cycle (none / whiteboard / blackboard / spotlight),
+  freeze-frame toggle, inline eraser modes + brush size (1–32 UI, main clamps
+  1–64), undo, redo, save annotated screenshot, clear, draw/passthrough pill
+  (icon-only in side docks), and four dock-position buttons drawn as a screen
+  with a bar on the target edge. The separate options popover still opens on
+  selection for the 8-colour palette and shape styles, so size/eraser controls
+  appear in both places.
 - Icons are inline SVGs in `icons.tsx`; no icon font or extra dependency.
 - Tailwind 4 entry: `styles.css` starts with `@import 'tailwindcss';`.
 - Zustand store mirrors `OverlayState` plus optimistic actions that call
@@ -465,7 +546,7 @@ over CDP):
 - Toolbar remains clickable while the overlay is in passthrough.
 - All four docks re-bound and reflow correctly; no renderer overflow (the
   then-current 104×680 and 920×80 viewports matched their window sizes; the
-  compact toolbar and dock magnification superseded those dimensions).
+  compact toolbar and later dock designs superseded those dimensions).
 
 Note: with the eraser selected, the dashed ring drawn on the live canvas stays
 visible while hovering. That is intended hover feedback, not leftover ink — do
