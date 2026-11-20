@@ -5,13 +5,59 @@ import type { DockPosition } from '../../shared/ipc'
  * main process (`src/main/toolbarWindow.ts`); these values mirror it so the
  * renderer can fold the visible bar into the exact spot the collapsed tab's
  * visible sliver occupies. Keep both files in sync.
+ *
+ * The cross-axis headroom is transparent window space for the dock
+ * magnification and label pills. The visible bar surface stays exactly the
+ * same size; only the window around it grew on the inward-facing side.
  */
 export const EXPANDED_WINDOW = {
-  horizontal: { width: 800, height: 60 },
-  // Wide enough to keep a shadow margin around the 88px bar surface (8px
-  // inset each side).
-  vertical: { width: 104, height: 416 }
+  horizontal: { width: 800, height: 124 },
+  // A 56px single-column rail plus 144px of inward transparent headroom for
+  // popped-out tiles and label pills.
+  vertical: { width: 208, height: 680 }
 } as const
+
+/** Padding between the window edge and the visible bar surface (`p-2`). */
+export const EXPANDED_INSET = 8
+
+/**
+ * Visible rail surface. Horizontal docks keep the 784×44 bar; side docks are an
+ * ultra-thin 56×664 strip. The rest of the vertical window is inward-facing
+ * headroom.
+ */
+export const BAR_SIZE = {
+  horizontal: {
+    width: EXPANDED_WINDOW.horizontal.width - EXPANDED_INSET * 2,
+    height: 44
+  },
+  vertical: {
+    width: 56,
+    height: EXPANDED_WINDOW.vertical.height - EXPANDED_INSET * 2
+  }
+} as const
+
+const TILE_SIZE = 32
+const TILE_GAP = 6
+
+/**
+ * Tool tiles inside the tools group: one 32px row in horizontal docks and one
+ * 32px column in side docks. The group has `p-1` and `gap-1.5`; keep these in
+ * sync with App.tsx and DockTile.tsx.
+ */
+export const TOOL_TILE = {
+  size: TILE_SIZE,
+  gap: TILE_GAP,
+  padding: 4,
+  step: TILE_SIZE + TILE_GAP
+} as const
+
+/** Centre of a tool tile in the tools-group's local coordinates. */
+export function tileCentre(index: number, vertical: boolean): { x: number; y: number } {
+  const offset = TOOL_TILE.padding + TOOL_TILE.size / 2
+  return vertical
+    ? { x: offset, y: offset + index * TOOL_TILE.step }
+    : { x: offset + index * TOOL_TILE.step, y: offset }
+}
 
 /**
  * Uniform collapsed window: the 48px tab (plus shadow room) centred in a
@@ -28,9 +74,6 @@ export const TAB_SLIVER = 12
 
 /** Distance the tab slides behind the screen edge: flush minus sliver. */
 export const TAB_TUCK = TAB_SIZE - TAB_SLIVER
-
-/** Padding between the window edge and the visible bar surface (`p-2`). */
-const EXPANDED_INSET = 8
 
 export interface DockMorph {
   /** Scale applied to the bar so it matches the tucked tab's sliver. */
@@ -54,29 +97,23 @@ export interface DockMorph {
  * docked edge (the origin stays on that edge).
  */
 export function dockMorph(dock: DockPosition): DockMorph {
-  const insetSlide = EXPANDED_INSET
-
   if (dock === 'left' || dock === 'right') {
-    const barWidth = EXPANDED_WINDOW.vertical.width - EXPANDED_INSET * 2
-    const barHeight = EXPANDED_WINDOW.vertical.height - EXPANDED_INSET * 2
     return {
-      scaleX: TAB_SLIVER / barWidth,
-      scaleY: TAB_SIZE / barHeight,
+      scaleX: TAB_SLIVER / BAR_SIZE.vertical.width,
+      scaleY: TAB_SIZE / BAR_SIZE.vertical.height,
       originX: dock === 'left' ? 0 : 100,
       originY: 50,
-      offsetX: dock === 'left' ? -insetSlide : insetSlide,
+      offsetX: dock === 'left' ? -EXPANDED_INSET : EXPANDED_INSET,
       offsetY: 0
     }
   }
 
-  const barWidth = EXPANDED_WINDOW.horizontal.width - EXPANDED_INSET * 2
-  const barHeight = EXPANDED_WINDOW.horizontal.height - EXPANDED_INSET * 2
   return {
-    scaleX: TAB_SIZE / barWidth,
-    scaleY: TAB_SLIVER / barHeight,
+    scaleX: TAB_SIZE / BAR_SIZE.horizontal.width,
+    scaleY: TAB_SLIVER / BAR_SIZE.horizontal.height,
     originX: 50,
     originY: dock === 'top' ? 0 : 100,
     offsetX: 0,
-    offsetY: dock === 'top' ? -insetSlide : insetSlide
+    offsetY: dock === 'top' ? -EXPANDED_INSET : EXPANDED_INSET
   }
 }

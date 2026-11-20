@@ -1,7 +1,7 @@
 # OpenPen Anno — project context
 
 Living notes for anyone (human or agent) picking this project up. Last updated
-2026-11-18, after the full OpenPen Anno v2 plan.
+2026-11-20, after the ultra-thin single-column dock and high-headroom labels.
 
 ---
 
@@ -125,7 +125,9 @@ Two separate BrowserWindows:
   `fullscreen: true` (fullscreen kills DWM transparency on Windows).
   `focusable: false` (see §7).
 - **Toolbar** — separate always-on-top window, `transparent`, frameless,
-  docked to a screen edge (1240×80 DIP horizontal, 104×740 DIP vertical).
+  docked to a screen edge (800×124 DIP horizontal, 208×680 DIP vertical; the
+  extra cross-axis room is inward-facing transparent headroom for hover
+  labels).
   Window flags: `resizable: false`, `thickFrame: false`, `hasShadow: false`,
   `backgroundColor: '#00000000'`. Dragging is native OS dragging
   (`-webkit-app-region: drag` on handle regions only); the main process never
@@ -334,12 +336,17 @@ same conditional pattern.
 ## 9. UI details (toolbar)
 
 - Two window shapes in `toolbarWindow.ts` (`DOCK_SIZE`): horizontal docks are
-  1240×80 DIP, side docks are 104×740 DIP (the bar surface is 88px wide via the
-  8px inset; the rest is shadow room). Both are flush to their work-area edge
-  (margin 0) and centred on the long axis, and re-bounded through
+  800×124 DIP, side docks are 208×680 DIP. The visible rail is 784×44 / 56×664
+  (8px inset); the extra cross-axis room is inward-facing transparent headroom
+  for the dock magnification and label pills. Both windows are flush to their
+  work-area edge (margin 0) and centred on the long axis, and re-bounded through
   `applyToolbarDock()` whenever `state.dock` / `state.collapsed` changes or the
   display layout changes. The collapsed window (`COLLAPSED_SIZE`) is a uniform
   64×64 DIP box for all four docks — the popped tab fits with shadow room.
+  `getToolbarRailBounds()` exposes the visible rail so the options popover is
+  positioned against the bar, not the enlarged window. The side rail is a
+  single 56px column; its 664px height is the cost of stacking nine 32px tools
+  plus the utility, mode and dock groups linearly.
 - Collapsing swaps the bar for a **rounded-square glass tab** (48px,
   `rounded-[10px]`, white/70, hairline `ring-white/60`, backdrop blur, soft
   shadow) that lives mostly behind the screen edge. Tucked, it sits
@@ -379,10 +386,24 @@ reducedMotion="user"` plus explicit duration-0 gating makes reduced motion
   instant. Positioning wrappers around animated elements stay plain divs so
   Motion's transform never clobbers Tailwind anchor translates.
 - Controls stagger into view on expand (`CONTROL_VARIANTS` orchestrated by the
-  surface's `staggerChildren`) and fade out together on collapse. Every button
-  gets `tapProps` (whileHover 1.08 / whileTap 0.9 spring); colour swatches use
-  a stronger hover. Raw CSS `transition` is replaced with `transition-colors`
+  surface's `staggerChildren`) and fade out together on collapse. Utility
+  buttons get `tapProps` (whileHover 1.08 / whileTap 0.9 spring); colour swatches
+  use a stronger hover. Raw CSS `transition` is replaced with `transition-colors`
   on motion-animated buttons so Motion's transforms don't double-ease.
+- Tool buttons (the six tools plus Shapes) are 32px dark squircle tiles in
+  `DockTile.tsx`. Horizontal docks lay them in one row; side docks stack them
+  in one 56px column (no cross-axis term — the bell follows the single axis).
+  A `useMotionValue` / `useSpring` pointer position feeds each tile's
+  `useTransform` bell: hovered ~1.18×, adjacent ~1.08×, second ~1.02×,
+  otherwise 1×, with a 6px tile gap keeping magnified neighbours clear. The
+  same bell lifts tiles 8px away from the docked edge (bottom = up, top = down,
+  left = right, right = left). The hovered tile shows a floating
+  `bg-zinc-950/95` label pill with an 8px gap on the inward side; horizontal
+  pills get a tiny dock-aware arrow (down for bottom docks, up for top docks),
+  and the pill is pointer-events-none and animates through `AnimatePresence`.
+  `MotionConfig reducedMotion="user"` plus explicit `reduce` gates pin the
+  scale/lift at rest while the static pill still appears. Backdrop and freeze
+  share the tile surface but keep their plain toggle interaction.
 - The toolbar window is dragged **natively by the OS**: `.app-drag`
   (`-webkit-app-region: drag` + grab cursor) is applied only to the expanded
   bar's grip (enlarged 44×32/32×44 hit area). The collapsed tab is not a
@@ -405,8 +426,9 @@ reducedMotion="user"` plus explicit duration-0 gating makes reduced motion
   `setBounds` per tick and had the same translucent-rect/lag problems.
 - The dock is a dark glass floating surface (near-black, large radius, soft
   shadow, hairline ring). Bottom/top docks are one row; left/right docks stack
-  the same groups into a single column, so both orientations share one
-  component tree.
+  the same groups into a single 56px column (tools, utility, mode and dock
+  chooser are each `flex flex-col`), so both orientations share one component
+  tree. Vertical tiles are 32×32, not stretched to the rail width.
 - Controls: grip, pen / highlighter / eraser / text / laser / stamp, a shape
   picker (arrow, line, rect, ellipse), backdrop cycle (none / whiteboard /
   blackboard / spotlight), freeze-frame toggle, 8-colour palette, brush size
@@ -441,8 +463,9 @@ over CDP):
   alpha 0.4, size 6 vs 32 changes ink ~4× for a same-length stroke.
 - Mode pill and Ctrl+Shift+D stay in sync in both directions.
 - Toolbar remains clickable while the overlay is in passthrough.
-- All four docks re-bound and reflow correctly; no renderer overflow
-  (104×680 and 920×80 viewports exactly match their window sizes).
+- All four docks re-bound and reflow correctly; no renderer overflow (the
+  then-current 104×680 and 920×80 viewports matched their window sizes; the
+  compact toolbar and dock magnification superseded those dimensions).
 
 Note: with the eraser selected, the dashed ring drawn on the live canvas stays
 visible while hovering. That is intended hover feedback, not leftover ink — do

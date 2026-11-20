@@ -6,16 +6,31 @@ import { activeDisplay } from './display'
 import { guardNavigation } from './navigation'
 import { getState, patchState } from './state'
 
+/** Space between the docked window edge and the visible bar surface (`p-2`). */
+const DOCK_INSET = 8
+
 /**
  * Horizontal docks (bottom/top) are wide and short; side docks (left/right) are
- * narrow and tall. The window is transparent, so its size only needs to fit the
- * dock surface plus a shadow margin.
+ * an ultra-thin single column. The long axis is the visible rail. The extra
+ * cross-axis size is inward-facing transparent headroom for the dock
+ * magnification and label pills; it is not part of the bar.
  */
 const DOCK_SIZE = {
-  horizontal: { width: 800, height: 60 },
-  // Narrow and shallow: the rail keeps a shadow margin around the 88px bar
-  // surface (8px inset on each side) and stacks its controls in two columns.
-  vertical: { width: 104, height: 416 }
+  horizontal: { width: 800, height: 124 },
+  // 56px single-column rail + 144px inward headroom for popped tiles/labels.
+  vertical: { width: 208, height: 680 }
+} as const
+
+/** The visible rail surface inside the expanded window. */
+const BAR_SIZE = {
+  horizontal: {
+    width: DOCK_SIZE.horizontal.width - DOCK_INSET * 2,
+    height: 44
+  },
+  vertical: {
+    width: 56,
+    height: DOCK_SIZE.vertical.height - DOCK_INSET * 2
+  }
 } as const
 
 /**
@@ -31,6 +46,38 @@ let toolbar: BrowserWindow | null = null
 
 export function getToolbarWindow(): BrowserWindow | null {
   return toolbar
+}
+
+/**
+ * Visible rail rectangle in screen coordinates. Expanded windows have
+ * transparent inward headroom for popped-out tiles and label pills, so menus
+ * must be positioned against the bar surface rather than the window edge.
+ */
+export function getToolbarRailBounds(): Rectangle | null {
+  if (!toolbar || toolbar.isDestroyed()) return null
+  const bounds = toolbar.getBounds()
+  const { dock, collapsed } = getState()
+  // Popovers are only opened from the expanded rail; fall back to the window
+  // bounds if a call races the collapse.
+  if (collapsed) return bounds
+
+  const vertical = dock === 'left' || dock === 'right'
+  const width = vertical ? BAR_SIZE.vertical.width : BAR_SIZE.horizontal.width
+  const height = vertical ? BAR_SIZE.vertical.height : BAR_SIZE.horizontal.height
+  const x =
+    dock === 'left'
+      ? bounds.x + DOCK_INSET
+      : dock === 'right'
+        ? bounds.x + bounds.width - DOCK_INSET - width
+        : bounds.x + Math.round((bounds.width - width) / 2)
+  const y =
+    dock === 'top'
+      ? bounds.y + DOCK_INSET
+      : dock === 'bottom'
+        ? bounds.y + bounds.height - DOCK_INSET - height
+        : bounds.y + Math.round((bounds.height - height) / 2)
+
+  return { x, y, width, height }
 }
 
 /**

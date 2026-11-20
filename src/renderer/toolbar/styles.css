@@ -10,10 +10,16 @@ body,
 }
 
 body {
+  /* The BrowserWindow rectangle is the hard clip. Internal wrappers stay
+     visible so hover labels can paint into the transparent headroom. */
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
   font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+}
+
+#root {
+  overflow: visible;
 }
 
 /*

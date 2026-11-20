@@ -4,14 +4,14 @@ import { is } from '@electron-toolkit/utils'
 import type { PopoverContext, PopoverKind, PopoverRequest } from '../shared/ipc'
 import { guardNavigation } from './navigation'
 import { getState } from './state'
-import { getToolbarWindow, raiseToolbar } from './toolbarWindow'
+import { getToolbarRailBounds, getToolbarWindow, raiseToolbar } from './toolbarWindow'
 
 /**
- * Floating tool options (colour, size, eraser mode, shape picker). The toolbar
- * window is sized to its visible rail and its padding is part of the click
- * region, so a panel drawn outside those bounds would be clipped and enlarging
- * the window would swallow clicks over the transparent area. A small, separate
- * topmost window keeps the rail's footprint untouched.
+ * Floating tool options (colour, size, eraser mode, shape picker). The expanded
+ * toolbar window includes transparent inward headroom for the dock
+ * magnification and label pills, so panels are placed against the visible rail
+ * (`getToolbarRailBounds()`), not the window edge. A small, separate topmost
+ * window keeps that rail footprint untouched.
  */
 const POPOVER_SIZE: Record<PopoverKind, { width: number; height: number }> = {
   tool: { width: 288, height: 104 },
@@ -60,6 +60,7 @@ function clamp(value: number, min: number, max: number): number {
 function popoverBounds(request: PopoverRequest): Rectangle {
   const { width, height } = POPOVER_SIZE[request.kind]
   const toolbar = getToolbarWindow()?.getBounds()
+  const rail = getToolbarRailBounds()
   // The renderer reports the trigger in its own CSS pixels; adding the
   // toolbar's origin yields screen DIP without trusting `window.screenX` on a
   // mixed-DPI desktop.
@@ -85,10 +86,10 @@ function popoverBounds(request: PopoverRequest): Rectangle {
   const maxY = workArea.y + workArea.height - height - MARGIN
 
   if (dock === 'left' || dock === 'right') {
-    const edge = toolbar
+    const edge = rail
       ? dock === 'left'
-        ? toolbar.x + toolbar.width
-        : toolbar.x
+        ? rail.x + rail.width
+        : rail.x
       : dock === 'left'
         ? anchor.x + anchor.width
         : anchor.x
@@ -103,8 +104,8 @@ function popoverBounds(request: PopoverRequest): Rectangle {
     }
   }
 
-  const railTop = toolbar ? toolbar.y : anchor.y
-  const railHeight = toolbar ? toolbar.height : anchor.height
+  const railTop = rail ? rail.y : anchor.y
+  const railHeight = rail ? rail.height : anchor.height
   const above = railTop - height - GAP
   const below = railTop + railHeight + GAP
   const preferred = dock === 'top' ? below : above
